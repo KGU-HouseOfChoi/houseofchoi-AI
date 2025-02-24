@@ -1,0 +1,6 @@
+{
+"DESCRIPTION" : {"LOCATION":"소재지","COURSE":"강좌","ELDERLY_CLASSROOM_NM":"노인교실명","TEL_NUM":"전화번호","NO":"연번"},
+"DATA" : [
+{"course":"노래교실 컴퓨터 고전무용 건강댄스 요가 경기민요","location":"삼양로80나길 56(수유동)","no":1,"elderly_classroom_nm":"강북노인교실","tel_num":"988-1435"}
+]
+}
