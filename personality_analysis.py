@@ -19,14 +19,13 @@ client = openai.OpenAI(api_key=openai.api_key)
 # ---------------------------
 # [2] MySQL 설정
 # ---------------------------
-db_config = {
-    'host': os.getenv("DB_HOST", 'localhost'),
-    'user': os.getenv("DB_USER", 'root'),
-    'password': os.getenv("DB_PASSWORD", 'kkero0418'),
-    'database': os.getenv("DB_NAME", 'personality_db'),
-    'port': int(os.getenv("DB_PORT", 3306))
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "db": os.getenv("DB_PERSONALITY_DB"),
+    "charset": os.getenv("DB_CHARSET")
 }
-
 # ---------------------------
 # [3] 설문 질문 데이터
 # ---------------------------
@@ -130,7 +129,7 @@ J/P: (J 또는 P)
 
     # DB 저장
     try:
-        conn = mysql.connector.connect(**db_config)
+        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
         query = """
         INSERT INTO user_personality (user_id, ei, sn, tf, jp) 
@@ -161,7 +160,7 @@ def get_analysis(user_id):
     특정 user_id의 MBTI 분석 결과를 조회 (챗봇 등에서 활용 가능).
     """
     try:
-        conn = mysql.connector.connect(**db_config)
+        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor(dictionary=True)
         query = """
         SELECT user_id, ei, sn, tf, jp, created_at 

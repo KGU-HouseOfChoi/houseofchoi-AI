@@ -1,24 +1,30 @@
 from flask import Flask, request, jsonify
 import pymysql
 import openai
+import os
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 app = Flask(__name__)
 
-##############################
-# 1) DB 연결 설정
-##############################
-DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",
-    "db": "personality_db",
-    "charset": "utf8mb4"
-}
-
-# 🔹 (새로운 방식) 클라이언트 생성
-openai.api_key = ""
+# ---------------------------
+# [1] OpenAI 설정
+# ---------------------------
+openai.api_key = os.getenv("OPENAI_API_KEY")
 client = openai.OpenAI(api_key=openai.api_key)
 
+# ---------------------------
+# [2] MySQL 설정
+# ---------------------------
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "db": os.getenv("DB_PERSONALITY_DB"),
+    "charset": os.getenv("DB_CHARSET")
+}
 def get_db_connection():
     return pymysql.connect(**DB_CONFIG)
 

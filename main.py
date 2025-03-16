@@ -1,8 +1,13 @@
 from flask import Flask, request, jsonify
+import os
 import pymysql
 import random
 import openai
 import requests  # HTTP 요청
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -11,23 +16,23 @@ app = Flask(__name__)
 ##############################
 
 DB_CONFIG_ELDERLY = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",
-    "db": "elderly_db",  # 노인교실 DB (elderly_courses, user_conversation_log 등)
-    "charset": "utf8mb4"
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "db": os.getenv("DB_ELDERLY_DB"),
+    "charset": os.getenv("DB_CHARSET")
 }
 
 DB_CONFIG_PERSONALITY = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",
-    "db": "personality_db",  # 대화 로그, 성향 (user_conversation_log, user_personality 등)
-    "charset": "utf8mb4"
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "db": os.getenv("DB_PERSONALITY_DB"),
+    "charset": os.getenv("DB_CHARSET")
 }
 
-# OpenAI API 키
-openai.api_key = ""
+# OpenAI API 키 설정
+openai.api_key = os.getenv("OPENAI_API_KEY")
 client = openai.OpenAI(api_key=openai.api_key)
 
 ##############################
@@ -291,7 +296,7 @@ def extract_requested_program(user_message):
     system_prompt = """
     사용자 메시지에서 특정 프로그램명을 정확히 한 단어 또는 두 단어로 추출해 주세요.
     예를 들어, '요가 프로그램이 있나요?'라는 질문이 들어오면 '요가'만 반환해야 합니다.
-    만약 프로그램명이 명확히 언급되지 않았다면 데이터형 'None'만 반환하세요.
+    만약 프로그램명이 명확히 언급되지 않았다면 데이터형 'None'만 반환하세요. 만약 프로그램 추천과 관련된 얘기가 아니면 그냥 상황에 맞춰 대답해주세요.
     """
     candidate_program = gpt_call(system_prompt, user_message, max_tokens=20)
 
@@ -302,6 +307,46 @@ def extract_requested_program(user_message):
 ##############################
 # 6) Flask API
 ##############################
+
+##############################
+# 전체 추천 API
+##############################
+@app.route("/recommend_all/<user_id>", methods=["GET"])
+def recommend_all_programs(user_id):
+    """
+    사용자 성향과 일치하는 모든 프로그램을 조회하여 반환
+    """
+    personality_data = fetch_user_personality(user_id)
+    if not personality_data:
+        return jsonify({"error": "사용자 성향 정보를 가져오지 못했습니다."}), 404
+
+    ei_value = personality_data.get("E/I")
+    if ei_value == "E":
+        target_personality = "외향형"
+    elif ei_value == "I":
+        target_personality = "내향형"
+    else:
+        return jsonify({"error": "알 수 없는 성향 정보입니다."}), 400
+
+    courses = fetch_all_courses()
+    if not courses:
+        return jsonify({"error": "현재 등록된 프로그램이 없습니다."}), 404
+
+    matched_list = []
+    for row in courses:
+        course_name = row.get("course", "")
+        ptype = get_course_personality(course_name)
+        if ptype == target_personality:
+            matched_list.append(row)
+
+    if not matched_list:
+        return jsonify({"message": f"'{target_personality}' 성향에 맞는 프로그램이 없습니다."}), 404
+
+    return jsonify({
+        "user_id": user_id,
+        "성향": target_personality,
+        "matched_programs": matched_list
+    })
 
 @app.route("/")
 def index():

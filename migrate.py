@@ -1,11 +1,16 @@
 import json
 import pymysql
 import openai
+import os
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 ##############################
 # 1) OpenAI 설정
 ##############################
-openai.api_key = "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"
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 client = openai.OpenAI(api_key=openai.api_key)
 
@@ -13,12 +18,13 @@ client = openai.OpenAI(api_key=openai.api_key)
 # 2) MySQL 설정
 ##############################
 DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",                 # root 계정
-    "password": "kkero0418",     # root 비밀번호
-    "db": "elderly_db",
-    "charset": "utf8mb4"
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "db": os.getenv("DB_ELDERLY_DB"),
+    "charset": os.getenv("DB_CHARSET")
 }
+
 
 def get_connection():
     return pymysql.connect(**DB_CONFIG)
