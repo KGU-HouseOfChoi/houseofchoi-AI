@@ -110,6 +110,10 @@ def fetch_user_personality(user_id):
     
     예: {
       "user_id": 101,
+      "ei": "E",
+      "sn": "N",
+      "tf": "T",
+      "jp": "P",
       "mbti": "ENTP",
       "personality_tags": ["외향적","창의적","활동적"],
       "created_at": "..."
@@ -181,43 +185,14 @@ def get_course_personality(course_name):
     finally:
         conn.close()
 
-def recommend_program(user_personality):
-    """
-    성향(E/I)에 맞는 프로그램 추천 -> (기존 로직: E->외향형, I->내향형)
-    (현재 사용 안 하는 함수 같지만 남겨둠)
-    """
-    courses = fetch_all_courses()
-    if not courses:
-        return None, "[ERROR] DB에 노인교실 데이터가 없습니다."
-
-    matched_list = []
-    for row in courses:
-        course_name = row.get("course", "")
-        ptype = get_course_personality(course_name)
-        if ptype == user_personality:
-            matched_list.append(row)
-
-    if matched_list:
-        chosen = random.choice(matched_list)
-        raw_msg = (
-            f"추천 프로그램입니다!\n"
-            f"노인교실 이름: {chosen['elderly_classroom_nm']}\n"
-            f"위치: {chosen['location']}\n"
-            f"연락처: {chosen['tel_num']}\n"
-            f"추천 강좌: {chosen['course']} ({user_personality})\n"
-        )
-        return chosen, raw_msg
-    else:
-        return None, f"'{user_personality}' 성향에 맞는 강좌를 찾지 못했습니다."
-
 ##############################
-# 5-1) 프로그램 키워드 없이 => 무작위 추천
+# 5-1) 프로그램 키워드 없이 => 무작위 추천 (ei 기반)
 ##############################
 
 def recommend_random_program(user_id):
     """
-    (수정) 1) 성향 서버에서 "mbti" 반환 -> 첫 글자 E or I
-       => "외향형"/"내향형" 매핑
+    1) 사용자 성향 정보 => ei 필드 사용
+       E => "외향형", I => "내향형"
     2) course_personality 에서 personality_type="외향형"/"내향형"
     3) 해당 강좌 중 무작위 추천
     """
@@ -226,35 +201,33 @@ def recommend_random_program(user_id):
     if not personality_data:
         return "죄송합니다. 사용자 성향 정보를 가져오지 못했습니다."
 
-    # 새 구조: "mbti" = "ENTP" 등
-    mbti_str = personality_data.get("mbti", "")
-    if mbti_str.startswith("E"):
+    # 2. ei 필드로 외향/내향 결정
+    ei_value = personality_data.get("ei", "")
+    if ei_value == "E":
         target_personality = "외향형"
-    elif mbti_str.startswith("I"):
+    elif ei_value == "I":
         target_personality = "내향형"
     else:
         return "죄송합니다. 알 수 없는 성향 정보입니다."
 
-    # 2. 모든 강좌 가져오기
+    # 3. 모든 강좌 가져오기
     courses = fetch_all_courses()
     if not courses:
         return "죄송합니다. 현재 등록된 프로그램이 없습니다."
 
-    # 3. 사용자 성향에 맞는 강좌만 필터링
+    # 4. 사용자 성향에 맞는 강좌만 필터링
     matched_list = []
     for row in courses:
         course_name = row.get("course", "")
-        ptype = get_course_personality(course_name)  # "외향형", "내향형", 등
+        ptype = get_course_personality(course_name)  # "외향형", "내향형"
         if ptype == target_personality:
             matched_list.append(row)
 
     if not matched_list:
         return f"'{target_personality}' 성향에 맞는 프로그램이 없습니다."
 
-    # 4. 무작위로 1개 선택
+    # 5. 무작위 추천
     chosen = random.choice(matched_list)
-
-    # 5. 안내 메시지 생성
     return (
         f"랜덤 추천 ({target_personality} 성향 기준)\n"
         f"노인교실 이름: {chosen['elderly_classroom_nm']}\n"
@@ -295,8 +268,9 @@ def generate_nonexistent_program_info(keyword):
 
 def extract_requested_program(user_message):
     """
-    GPT를 사용하여 사용자의 메시지에서 특정 프로그램명을 정확히 한 단어 또는 두 단어로 추출
-    프로그램 명이 없다면 'None' 반환
+    GPT를 사용하여 사용자의 메시지에서 특정 프로그램명을 추출.
+    예) "요가 프로그램이 있나요?" -> "요가"
+    프로그램명이 없으면 None 반환
     """
     system_prompt = """
     사용자 메시지에서 특정 프로그램명을 정확히 한 단어 또는 두 단어로 추출해 주세요.
@@ -314,22 +288,21 @@ def extract_requested_program(user_message):
 ##############################
 
 ##############################
-# 전체 추천 API
+# 모든 프로그램 추천 API (ei 기반)
 ##############################
 @app.route("/recommend_all/<user_id>", methods=["GET"])
 def recommend_all_programs(user_id):
     """
-    사용자 성향과 일치하는 모든 프로그램(외향형/내향형)을 조회하여 반환
+    사용자 성향(ei) 기반 (E->'외향형', I->'내향형')으로 모든 일치 프로그램 반환
     """
     personality_data = fetch_user_personality(user_id)
     if not personality_data:
         return jsonify({"error": "사용자 성향 정보를 가져오지 못했습니다."}), 404
 
-    # 이전에는 "E/I" 사용 -> 이제 "mbti" 사용
-    mbti_str = personality_data.get("mbti", "")
-    if mbti_str.startswith("E"):
+    ei_value = personality_data.get("ei", "")
+    if ei_value == "E":
         target_personality = "외향형"
-    elif mbti_str.startswith("I"):
+    elif ei_value == "I":
         target_personality = "내향형"
     else:
         return jsonify({"error": "알 수 없는 성향 정보입니다."}), 400
@@ -341,7 +314,7 @@ def recommend_all_programs(user_id):
     matched_list = []
     for row in courses:
         course_name = row.get("course", "")
-        ptype = get_course_personality(course_name)  # DB에서 "외향형"/"내향형" 조회
+        ptype = get_course_personality(course_name)
         if ptype == target_personality:
             matched_list.append(row)
 
@@ -397,7 +370,7 @@ def chat():
     assistant_answer = None
 
     if requested_program is None or requested_program.lower() == "none":
-        # [C-1] 프로그램명이 None => 랜덤 프로그램 추천
+        # [C-1] 프로그램명이 None => 무작위 추천
         raw_msg = recommend_random_program(user_id)
         system_prompt = "당신은 친절한 한국어 음성 비서입니다. 사용자의 성향에 맞춰 프로그램을 추천합니다. 아래 문장을 자연스럽게 다듬어 주세요."
         recommendation = gpt_call(system_prompt, raw_msg)
@@ -431,7 +404,6 @@ def chat():
 
     # (C) 응답 구성
     response = {"user_id": user_id}
-
     chatbot_response = ""  # 실제 챗봇의 최종 답변 텍스트
 
     if recommendation:

@@ -238,17 +238,21 @@ def get_analysis(user_id):
     if not row:
         return jsonify({"error": f"user_id {user_id} 데이터가 없습니다."}), 404
 
-    # MBTI 재구성
+    # MBTI 문자열 생성
     mbti_str = f"{row['ei']}{row['sn']}{row['tf']}{row['jp']}"
 
-    # 태그를 리스트로
-    tags_list = row['personality_tags'].split(',') if row['personality_tags'] else []
+    # 태그를 리스트로 변환 (비어있으면 빈 리스트)
+    tags_list = row["personality_tags"].split(',') if row["personality_tags"] else []
 
     return jsonify({
         "user_id": row["user_id"],
-        "mbti": mbti_str,
-        "personality_tags": tags_list,
-        "created_at": str(row["created_at"])
+        "ei": row["ei"],  # E/I
+        "sn": row["sn"],  # S/N
+        "tf": row["tf"],  # T/F
+        "jp": row["jp"],  # J/P
+        "mbti": mbti_str,  # MBTI (예: "ENTP")
+        "personality_tags": tags_list,  # 태그 목록 (배열)
+        "created_at": str(row["created_at"])  # 생성 시간
     }), 200
 
 # ---------------------------
