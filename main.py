@@ -75,7 +75,6 @@ def save_schedule(user_id, program_name):
     finally:
         conn.close()
 
-
 ##############################
 # 2-3) 대화 로그 저장 함수
 ##############################
@@ -106,15 +105,21 @@ def save_conversation_log(user_id, user_message, assistant_response):
 
 def fetch_user_personality(user_id):
     """
-    외부 Flask 서버 API로 사용자 성향 정보 가져오기 (E/I 등)
+    외부 Flask 서버 API로 사용자 성향 정보 가져오기
     GET http://127.0.0.1:5000/analysis/<user_id>
-    예: { "E/I": "I", "J/P": "J", ... }
+    
+    예: {
+      "user_id": 101,
+      "mbti": "ENTP",
+      "personality_tags": ["외향적","창의적","활동적"],
+      "created_at": "..."
+    }
     """
     api_url = f"http://127.0.0.1:5000/analysis/{user_id}"
     try:
         response = requests.get(api_url)
         response.raise_for_status()
-        return response.json()
+        return response.json()  # dict
     except requests.RequestException as e:
         print(f"[ERROR] API 요청 실패: {e}")
         return None
@@ -159,7 +164,7 @@ def fetch_all_courses():
 
 def get_course_personality(course_name):
     """
-    course_personality 테이블에서 해당 course_name의 성향(외향형/내향형) 조회
+    course_personality 테이블에서 해당 course_name의 성향(외향형/내향형 등) 조회
     """
     conn = get_elderly_db_connection()
     try:
@@ -178,7 +183,8 @@ def get_course_personality(course_name):
 
 def recommend_program(user_personality):
     """
-    성향(E/I)에 맞는 프로그램 추천
+    성향(E/I)에 맞는 프로그램 추천 -> (기존 로직: E->외향형, I->내향형)
+    (현재 사용 안 하는 함수 같지만 남겨둠)
     """
     courses = fetch_all_courses()
     if not courses:
@@ -204,27 +210,27 @@ def recommend_program(user_personality):
     else:
         return None, f"'{user_personality}' 성향에 맞는 강좌를 찾지 못했습니다."
 
-
 ##############################
 # 5-1) 프로그램 키워드 없이 => 무작위 추천
 ##############################
 
 def recommend_random_program(user_id):
     """
-    1) http://127.0.0.1:5000/analysis/<user_id> 에서 사용자 E/I 성향 가져옴
-    2) E -> 외향형, I -> 내향형
-    3) course_personality에서 personality_type이 해당 성향인 프로그램들 중 무작위 추천
+    (수정) 1) 성향 서버에서 "mbti" 반환 -> 첫 글자 E or I
+       => "외향형"/"내향형" 매핑
+    2) course_personality 에서 personality_type="외향형"/"내향형"
+    3) 해당 강좌 중 무작위 추천
     """
-
-    # 1. 사용자 성향 가져오기
+    # 1. 사용자 성향 정보 가져오기
     personality_data = fetch_user_personality(user_id)
     if not personality_data:
         return "죄송합니다. 사용자 성향 정보를 가져오지 못했습니다."
 
-    ei_value = personality_data.get("E/I")
-    if ei_value == "E":
+    # 새 구조: "mbti" = "ENTP" 등
+    mbti_str = personality_data.get("mbti", "")
+    if mbti_str.startswith("E"):
         target_personality = "외향형"
-    elif ei_value == "I":
+    elif mbti_str.startswith("I"):
         target_personality = "내향형"
     else:
         return "죄송합니다. 알 수 없는 성향 정보입니다."
@@ -257,9 +263,8 @@ def recommend_random_program(user_id):
         f"추천 강좌: {chosen['course']}"
     )
 
-
 ##############################
-# 추가 로직: 특정 프로그램 검색
+# 특정 프로그램 검색
 ##############################
 
 def search_program_in_db(keyword):
@@ -290,13 +295,13 @@ def generate_nonexistent_program_info(keyword):
 
 def extract_requested_program(user_message):
     """
-    GPT를 사용하여 사용자의 메시지에서 특정 프로그램을 원하는지 분석
+    GPT를 사용하여 사용자의 메시지에서 특정 프로그램명을 정확히 한 단어 또는 두 단어로 추출
     프로그램 명이 없다면 'None' 반환
     """
     system_prompt = """
     사용자 메시지에서 특정 프로그램명을 정확히 한 단어 또는 두 단어로 추출해 주세요.
     예를 들어, '요가 프로그램이 있나요?'라는 질문이 들어오면 '요가'만 반환해야 합니다.
-    만약 프로그램명이 명확히 언급되지 않았다면 데이터형 'None'만 반환하세요. 만약 프로그램 추천과 관련된 얘기가 아니면 그냥 상황에 맞춰 대답해주세요.
+    만약 프로그램명이 명확히 언급되지 않았다면 데이터형 'None'만 반환하세요.
     """
     candidate_program = gpt_call(system_prompt, user_message, max_tokens=20)
 
@@ -314,16 +319,17 @@ def extract_requested_program(user_message):
 @app.route("/recommend_all/<user_id>", methods=["GET"])
 def recommend_all_programs(user_id):
     """
-    사용자 성향과 일치하는 모든 프로그램을 조회하여 반환
+    사용자 성향과 일치하는 모든 프로그램(외향형/내향형)을 조회하여 반환
     """
     personality_data = fetch_user_personality(user_id)
     if not personality_data:
         return jsonify({"error": "사용자 성향 정보를 가져오지 못했습니다."}), 404
 
-    ei_value = personality_data.get("E/I")
-    if ei_value == "E":
+    # 이전에는 "E/I" 사용 -> 이제 "mbti" 사용
+    mbti_str = personality_data.get("mbti", "")
+    if mbti_str.startswith("E"):
         target_personality = "외향형"
-    elif ei_value == "I":
+    elif mbti_str.startswith("I"):
         target_personality = "내향형"
     else:
         return jsonify({"error": "알 수 없는 성향 정보입니다."}), 400
@@ -335,7 +341,7 @@ def recommend_all_programs(user_id):
     matched_list = []
     for row in courses:
         course_name = row.get("course", "")
-        ptype = get_course_personality(course_name)
+        ptype = get_course_personality(course_name)  # DB에서 "외향형"/"내향형" 조회
         if ptype == target_personality:
             matched_list.append(row)
 
@@ -357,7 +363,7 @@ def chat():
     """
     Body (JSON):
     {
-      "user_id": "123",
+      "user_id": "101",
       "message": "사용자 발화",
       "recommended_program": "노래교실" (일정 등록 시 함께 전달)
     }
@@ -393,13 +399,13 @@ def chat():
     if requested_program is None or requested_program.lower() == "none":
         # [C-1] 프로그램명이 None => 랜덤 프로그램 추천
         raw_msg = recommend_random_program(user_id)
-        system_prompt = "당신은 친절한 한국어 음성 비서입니다. 당신의 성향에 맞는 프로그램을 무조건 추천합니다 하고 이 문장을 자연스럽게 바꿔주세요."
+        system_prompt = "당신은 친절한 한국어 음성 비서입니다. 사용자의 성향에 맞춰 프로그램을 추천합니다. 아래 문장을 자연스럽게 다듬어 주세요."
         recommendation = gpt_call(system_prompt, raw_msg)
     else:
-        # [C-2] 프로그램명이 존재
+        # [C-2] 프로그램명이 존재 -> DB 검색
         found_programs = search_program_in_db(requested_program)
         if found_programs:
-            # DB에 있으면 => recommendation
+            # DB에 있음 => recommendation
             chosen = random.choice(found_programs)
             raw_msg = (
                 f"[사용자가 '{requested_program}'를 요청]\n"
@@ -414,13 +420,13 @@ def chat():
             system_prompt = "당신은 친절한 한국어 음성 비서입니다. 찾아진 요소를 종합하여 하나의 문장으로 자연스럽게 만들고 친절한 말투로 다듬어 주세요."
             recommendation = gpt_call(system_prompt, raw_msg)
         else:
-            # 없으면 => assistant_answer
+            # DB에 없으면 => GPT 안내
             alt_info = generate_nonexistent_program_info(requested_program)
             raw_msg = (
                 f"[사용자가 '{requested_program}'를 요청]\n"
                 f"현재 센터에는 없지만, 이런 프로그램이 있을 수 있어요:\n{alt_info}"
             )
-            system_prompt = "당신은 친절한 한국어 음성 비서입니다. 이 문장을 자연스럽게 다듬어주세요. 너무 길게 대답하진 말아주세요요"
+            system_prompt = "당신은 친절한 한국어 음성 비서입니다. 이 문장을 자연스럽게 다듬어주세요. 너무 길게 대답하진 말아주세요."
             assistant_answer = gpt_call(system_prompt, raw_msg)
 
     # (C) 응답 구성
@@ -441,14 +447,14 @@ def chat():
     return jsonify(response)
 
 ##############################
-# 일정 조회 API 추가
+# 일정 조회 API
 ##############################
 
 @app.route("/schedule/<user_id>", methods=["GET"])
 def get_user_schedule(user_id):
     """
     특정 user_id의 일정 목록을 조회하여 반환
-    예: GET /schedule/123
+    예: GET /schedule/101
     """
     conn = get_elderly_db_connection()
     try:
@@ -469,13 +475,13 @@ def get_user_schedule(user_id):
         conn.close()
 
 ##############################
-# 대화로그 API 추가
+# 대화로그 API
 ##############################
 @app.route("/chatlog/<user_id>", methods=["GET"])
 def get_chat_log(user_id):
     """
     특정 user_id의 대화 기록을 조회하여 반환
-    예: GET /chatlog/123
+    예: GET /chatlog/101
     """
     conn = get_personality_db_connection()
     try:

@@ -1,6 +1,4 @@
 import os
-import re
-import openai
 import mysql.connector
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
@@ -11,13 +9,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # ---------------------------
-# [1] OpenAI 설정
-# ---------------------------
-openai.api_key = os.getenv("OPENAI_API_KEY")
-client = openai.OpenAI(api_key=openai.api_key)
-
-# ---------------------------
-# [2] MySQL 설정
+# [1] MySQL 설정
 # ---------------------------
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
@@ -26,8 +18,9 @@ DB_CONFIG = {
     "db": os.getenv("DB_PERSONALITY_DB"),
     "charset": os.getenv("DB_CHARSET")
 }
+
 # ---------------------------
-# [3] 설문 질문 데이터
+# [2] 13개 질문 데이터
 # ---------------------------
 QUESTIONS = [
     {"id": 1,  "question": "손주가 예고 없이 찾아오면?",         "choices": ["(A) 반갑다", "(B) 미리 연락이 좋다"]},
@@ -39,161 +32,227 @@ QUESTIONS = [
     {"id": 7,  "question": "사회적 활동?",                 "choices": ["(A) 참여한다", "(B) 혼자가 좋다"]},
     {"id": 8,  "question": "변화를 좋아하는가?",             "choices": ["(A) 변화를 좋아함", "(B) 안정이 좋다"]},
     {"id": 9,  "question": "여가 시간?",                  "choices": ["(A) 새로운 도전", "(B) 익숙한 활동"]},
-    {"id": 10, "question": "스트레스 해소법?",               "choices": ["(A) 대화", "(B) 혼자 해결"]}
+    {"id": 10, "question": "스트레스 해소법?",               "choices": ["(A) 대화", "(B) 혼자 해결"]},
+
+    # 온보딩 3문항
+    {"id": 11, "question": "운동을 선호하시나요?",         "choices": ["(A) 예", "(B) 아니요"]},
+    {"id": 12, "question": "혼자 활동을 좋아하시나요?",    "choices": ["(A) 예", "(B) 아니요"]},
+    {"id": 13, "question": "조용한 활동을 선호하시나요?",  "choices": ["(A) 예", "(B) 아니요"]},
 ]
 
 # ---------------------------
-# [4] 질문 조회 API (JSON 반환)
+# [3] MBTI 분석 함수 (앞 10개)
+# ---------------------------
+def analyze_mbti_from_10(answers_10):
+    question_map = {
+        1: ('EI', {'A': 'E', 'B': 'I'}),
+        2: ('SN', {'A': 'S', 'B': 'N'}),
+        3: ('EI', {'A': 'I', 'B': 'E'}),
+        4: ('JP', {'A': 'J', 'B': 'P'}),
+        5: ('SN', {'A': 'S', 'B': 'N'}),
+        6: ('TF', {'A': 'T', 'B': 'F'}),
+        7: ('EI', {'A': 'E', 'B': 'I'}),
+        8: ('TF', {'A': 'F', 'B': 'T'}),
+        9: ('SN', {'A': 'N', 'B': 'S'}),
+        10: ('JP', {'A': 'P', 'B': 'J'})
+    }
+
+    score = {'E':0, 'I':0, 'S':0, 'N':0, 'T':0, 'F':0, 'J':0, 'P':0}
+    for i, ans in enumerate(answers_10, start=1):
+        dim, ab_map = question_map[i]
+        if ans in ab_map:
+            score[ab_map[ans]] += 1
+
+    ei = 'E' if score['E'] >= score['I'] else 'I'
+    sn = 'S' if score['S'] >= score['N'] else 'N'
+    tf = 'T' if score['T'] >= score['F'] else 'F'
+    jp = 'J' if score['J'] >= score['P'] else 'P'
+    return ei, sn, tf, jp
+
+# ---------------------------
+# [4] MBTI -> 태그
+# ---------------------------
+def analyze_mbti_tags(mbti_str):
+    tags = []
+    if 'E' in mbti_str:
+        tags.append("외향적")
+        tags.append("사회적")
+    else:
+        tags.append("내향적")
+        tags.append("정적인")
+
+    if 'S' in mbti_str:
+        tags.append("현실적")
+        tags.append("체험형")
+    else:
+        tags.append("창의적")
+        tags.append("예술적")
+
+    if 'T' in mbti_str:
+        tags.append("분석적")
+        tags.append("논리적")
+    else:
+        tags.append("감성적")
+        tags.append("교류형")
+
+    if 'J' in mbti_str:
+        tags.append("구조적")
+        tags.append("조직적")
+    else:
+        tags.append("자유로운")
+        tags.append("유동적")
+    return tags
+
+# ---------------------------
+# [5] 온보딩 3문항 -> 태그
+# ---------------------------
+def analyze_onboarding_tags(answers_3):
+    tags = []
+    # answers_3[0] -> 운동_선호
+    if answers_3[0] == 'A':  # 예
+        tags.append("활동적")
+    else:                    # 아니요
+        tags.append("정적인")
+
+    # answers_3[1] -> 혼자_활동
+    if answers_3[1] == 'A':  # 예
+        tags.append("내향적")
+    else:                    # 아니요
+        tags.append("외향적")
+
+    # answers_3[2] -> 조용한_활동
+    if answers_3[2] == 'A':  # 예
+        tags.append("정적인")
+    else:
+        tags.append("활동적")
+
+    return tags
+
+# ---------------------------
+# [6] 13문항 종합 처리
+# ---------------------------
+def analyze_13_answers(answers_13):
+    if len(answers_13) != 13:
+        raise ValueError("정확히 13개의 답변이 필요합니다.")
+    
+    # (1) 1~10 -> MBTI
+    ei, sn, tf, jp = analyze_mbti_from_10(answers_13[:10])
+    mbti_str = f"{ei}{sn}{tf}{jp}"
+
+    # (2) MBTI 태그
+    mbti_tags = analyze_mbti_tags(mbti_str)
+
+    # (3) 11~13 -> 온보딩 태그
+    onboard_tags = analyze_onboarding_tags(answers_13[10:])
+
+    # (4) 합치고 중복 제거
+    all_tags = list(set(mbti_tags + onboard_tags))
+    return mbti_str, all_tags
+
+# ---------------------------
+# [7] 질문 목록 조회 (GET)
 # ---------------------------
 @app.route('/', methods=['GET'])
 def get_questions():
-    """
-    질문 목록을 JSON 형태로 반환합니다.
-    """
     return jsonify(questions=QUESTIONS), 200
 
 # ---------------------------
-# [5] GPT 성향 분석 함수
-# ---------------------------
-def analyze_personality_gpt(prompt):
-    """
-    OpenAI API를 이용해 prompt에 대한 답변(분석 결과)을 반환.
-    예외 발생 시, 오류 메시지를 문자열로 반환.
-    """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",  # gpt-4 등을 사용할 수 있음
-            messages=[
-                {"role": "system", "content": "You are an AI assistant analyzing personality."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=200,
-            temperature=0.7
-        )
-        gpt_result = response.choices[0].message.content.strip()
-        return gpt_result if gpt_result else "분석 결과를 생성할 수 없습니다."
-    except Exception as e:
-        return f"OpenAI API 오류: {str(e)}"
-
-# ---------------------------
-# [6] 분석 엔드포인트 (A/B 답변 받기) - POST
+# [8] 성향 분석 + DB 저장 (POST)
 # ---------------------------
 @app.route('/analyze', methods=['POST'])
 def analyze_personality():
     """
-    사용자의 A/B 답변(10개)과 user_id를 입력받아
-    GPT 분석 결과( E/I, S/N, T/F, J/P )를 DB에 저장한 뒤 JSON으로 반환합니다.
+    JSON 예시:
+    {
+      "user_id": 123,
+      "answers": ["A","B","A","B","A","B","A","B","A","B","A","B","A"]  # 13개
+    }
     """
     data = request.json
-    user_answers = data.get("answers", [])
-    user_id = data.get("user_id", None)
+    user_id = data.get("user_id")
+    answers_13 = data.get("answers", [])
 
-    if not user_answers or len(user_answers) != 10:
-        return jsonify({"error": "답변 10개가 필요합니다."}), 400
     if user_id is None:
         return jsonify({"error": "user_id가 필요합니다."}), 400
+    if len(answers_13) != 13:
+        return jsonify({"error": "A/B 답변 13개가 필요합니다."}), 400
 
-    # 프롬프트 생성
-    prompt = "사용자의 A/B 선택 결과를 바탕으로 성향을 분석하세요.\n"
-    for i, answer in enumerate(user_answers, start=1):
-        question_text = QUESTIONS[i-1]["question"]
-        prompt += f"\nQ{i}. {question_text}\n사용자 선택: {answer}\n"
-
-    prompt += """
-아래 기준에 따라 사용자의 성향을 분석하고, 최종적으로 MBTI 요소를 출력하세요.
-
-1. **외향적(E)인지 내향적(I)인지 판단하세요.**  
-2. **감각형(S)인지 직관형(N)인지 판단하세요.**  
-3. **사고형(T)인지 감정형(F)인지 판단하세요.**  
-4. **판단형(J)인지 인식형(P)인지 판단하세요.**  
-
-💡 **최종 결과는 아래 형식으로 출력하세요 (추가 설명 없이 MBTI 요소만 출력하세요):**  
-E/I: (E 또는 I)  
-S/N: (S 또는 N)  
-T/F: (T 또는 F)  
-J/P: (J 또는 P)
-"""
-
-    # GPT 분석 수행
-    gpt_result = analyze_personality_gpt(prompt)
-
-    # MBTI 요소 추출 (정규 표현식)
-    match = re.search(
-        r"E/I:\s*([EI])\s*\nS/N:\s*([SN])\s*\nT/F:\s*([TF])\s*\nJ/P:\s*([JP])", 
-        gpt_result
-    )
-    if match:
-        ei, sn, tf, jp = match.groups()
-    else:
-        return jsonify({"error": "GPT 분석 결과가 예상한 형식이 아닙니다.", "gpt_result": gpt_result}), 500
+    # 분석
+    try:
+        mbti_str, all_tags = analyze_13_answers(answers_13)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     # DB 저장
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
+
+        tags_str = ",".join(all_tags)  # DB에 쉼표로 구분 저장
+
+        # user_personality 테이블에 personality_tags 컬럼이 있다고 가정
         query = """
-        INSERT INTO user_personality (user_id, ei, sn, tf, jp) 
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO user_personality (user_id, ei, sn, tf, jp, personality_tags)
+        VALUES (%s, %s, %s, %s, %s, %s)
         """
-        cursor.execute(query, (user_id, ei, sn, tf, jp))
+        ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
+        cursor.execute(query, (user_id, ei, sn, tf, jp, tags_str))
         conn.commit()
         cursor.close()
         conn.close()
-    except Exception as e:
-        return jsonify({"error": f"DB 저장 오류: {str(e)}"}), 500
+    except Exception as ex:
+        return jsonify({"error": f"DB 저장 오류: {str(ex)}"}), 500
 
-    # 결과 반환
+    # 결과 응답
     return jsonify({
         "user_id": user_id,
-        "E/I": ei,
-        "S/N": sn,
-        "T/F": tf,
-        "J/P": jp
+        "mbti": mbti_str,
+        "personality_tags": all_tags
     }), 200
 
 # ---------------------------
-# [7] 분석 결과 조회 (GET) - user_id로 조회
+# [9] 분석 결과 조회 (GET)
 # ---------------------------
 @app.route('/analysis/<int:user_id>', methods=['GET'])
 def get_analysis(user_id):
     """
-    특정 user_id의 MBTI 분석 결과를 조회 (챗봇 등에서 활용 가능).
+    user_id의 가장 최근 분석 결과 조회
     """
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor(dictionary=True)
         query = """
-        SELECT user_id, ei, sn, tf, jp, created_at 
-        FROM user_personality
-        WHERE user_id = %s
-        ORDER BY id DESC
-        LIMIT 1
+            SELECT user_id, ei, sn, tf, jp, personality_tags, created_at
+            FROM user_personality
+            WHERE user_id = %s
+            ORDER BY id DESC
+            LIMIT 1
         """
         cursor.execute(query, (user_id,))
         row = cursor.fetchone()
         cursor.close()
         conn.close()
-    except Exception as e:
-        return jsonify({"error": f"DB 조회 오류: {str(e)}"}), 500
+    except Exception as ex:
+        return jsonify({"error": f"DB 조회 오류: {str(ex)}"}), 500
 
     if not row:
         return jsonify({"error": f"user_id {user_id} 데이터가 없습니다."}), 404
 
-    # 필요하다면, 하나의 필드로 합쳐서 반환할 수도 있음 (예: "ISTP")
-    # mbti_str = f"{row['ei']}{row['sn']}{row['tf']}{row['jp']}"
+    # MBTI 재구성
+    mbti_str = f"{row['ei']}{row['sn']}{row['tf']}{row['jp']}"
+
+    # 태그를 리스트로
+    tags_list = row['personality_tags'].split(',') if row['personality_tags'] else []
 
     return jsonify({
         "user_id": row["user_id"],
-        "E/I": row["ei"],
-        "S/N": row["sn"],
-        "T/F": row["tf"],
-        "J/P": row["jp"],
+        "mbti": mbti_str,
+        "personality_tags": tags_list,
         "created_at": str(row["created_at"])
-        # "mbti": mbti_str
     }), 200
 
 # ---------------------------
-# [8] Flask 실행
+# [10] 서버 실행
 # ---------------------------
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
