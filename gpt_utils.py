@@ -19,7 +19,8 @@ def gpt_call(system_prompt, user_prompt, max_tokens=200):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.7
+            temperature=0.7,
+            max_tokens=max_tokens
         )
         return response.choices[0].message.content.strip()
     except Exception as e:

@@ -90,7 +90,7 @@ def build_program_message(course_dict):
         f"인원원: {course_dict.get('headcount','')}\n"
         f"태그: {course_dict.get('tags','')}\n"
     )
-    return message
+    return message, course_dict.get("프로그램명", None)
 
 
 def recommend_random_program(user_id):
@@ -206,3 +206,26 @@ def extract_requested_program(user_message):
     if "none" in candidate_program.lower():
         return None
     return candidate_program.strip()
+
+def get_last_recommended_program(user_id):
+    """
+    user_conversation_log에서 user_id와 일치하며
+    recommended_program이 NOT NULL인 레코드를
+    최신순으로 조회하여 프로그램명을 반환
+    """
+    conn = get_capstone_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = """
+                SELECT recommended_program
+                FROM user_conversation_log
+                WHERE user_id = %s
+                  AND recommended_program IS NOT NULL
+                ORDER BY id DESC
+                LIMIT 1
+            """
+            cursor.execute(sql, (user_id,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()
