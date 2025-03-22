@@ -1,4 +1,3 @@
-# recommend_routes.py
 import datetime
 import random
 import pymysql
