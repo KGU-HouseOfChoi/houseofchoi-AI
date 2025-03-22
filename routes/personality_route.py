@@ -1,13 +1,12 @@
+import json
 import pymysql
 from flask import Blueprint, request, jsonify
-from db_utils import get_personality_db_connection
+from db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from gpt_utils import gpt_call
 
 personality_bp = Blueprint("personality_bp", __name__)
 
-# ---------------------------
-# 1) 13문항 (온보딩) 관련
-# ---------------------------
+# 1) 13문항 질문 (온보딩)
 QUESTIONS = [
     {"id": 1,  "question": "손주가 예고 없이 찾아오면?",    "choices": ["(A) 반갑다", "(B) 미리 연락이 좋다"]},
     {"id": 2,  "question": "새로운 기술을 배울 때?",       "choices": ["(A) 직접 시도", "(B) 도움 요청"]},
@@ -26,24 +25,11 @@ QUESTIONS = [
 
 @personality_bp.route("/questions", methods=["GET"])
 def get_questions():
-    """
-    13문항 질문 목록 조회
-    GET /questions
-    """
     return jsonify({"questions": QUESTIONS}), 200
 
 
 @personality_bp.route("/analyze", methods=["POST"])
 def analyze_personality():
-    """
-    13문항 A/B 답변 -> MBTI/태그 분석, DB 저장
-    POST /analyze
-    Body 예:
-    {
-      "user_id": 123,
-      "answers": ["A","B","A","B","A","B","A","B","A","B","A","B","A"]
-    }
-    """
     data = request.json
     user_id = data.get("user_id")
     answers_13 = data.get("answers", [])
@@ -53,14 +39,12 @@ def analyze_personality():
     if len(answers_13) != 13:
         return jsonify({"error": "정확히 13개의 A/B 답변이 필요합니다."}), 400
 
-    # ----- MBTI + 온보딩 분석 로직 ------
     try:
         mbti_str, all_tags = analyze_13_answers(answers_13)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    # DB 저장
-    conn = get_personality_db_connection()
+    conn = get_capstone_db_connection()
     try:
         with conn.cursor() as cursor:
             tags_str = ",".join(all_tags)
@@ -85,11 +69,7 @@ def analyze_personality():
 
 @personality_bp.route("/analysis/<int:user_id>", methods=["GET"])
 def get_analysis(user_id):
-    """
-    특정 user_id의 가장 최신 성향(MBTI + 태그) 조회
-    GET /analysis/<user_id>
-    """
-    conn = get_personality_db_connection()
+    conn = get_capstone_db_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             sql = """
@@ -124,18 +104,23 @@ def get_analysis(user_id):
     }), 200
 
 
-# ---------------------------
-# 2) 최근 대화 로그 기반 EI 변경
-# ---------------------------
 @personality_bp.route("/analyze/<user_id>", methods=["POST"])
 def analyze_user_conversation(user_id):
     """
     POST /analyze/<user_id>?days=30
-    최근 N일(기본=30일)동안 user_conversation_log에서 user_message만 모아
-    GPT로 EI 성향 변화 감지 -> user_personality 업데이트
+    최근 N일(기본 30일)간의 대화 로그를 기반으로, 사용자의 성향 변화(각 축: ei, sn, tf, jp)를 분석하여
+    변화가 감지되면 DB의 해당 필드와 태그(personality_tags)를 업데이트합니다.
+    
+    GPT에게 아래와 같이 JSON 형식으로 응답하도록 요청합니다:
+    {
+      "ei": "NEW_E" 또는 "NEW_I" 또는 "NO_CHANGE",
+      "sn": "NEW_S" 또는 "NEW_N" 또는 "NO_CHANGE",
+      "tf": "NEW_T" 또는 "NEW_F" 또는 "NO_CHANGE",
+      "jp": "NEW_J" 또는 "NEW_P" 또는 "NO_CHANGE"
+    }
     """
     days = request.args.get("days", 30)
-    conn = get_personality_db_connection()
+    conn = get_capstone_db_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             sql_logs = """
@@ -151,63 +136,77 @@ def analyze_user_conversation(user_id):
                 return jsonify({"message": f"{days}일간 대화 기록이 없어 분석 불가"}), 400
 
             conversation_text = "\n".join([row["user_message"] for row in logs])
-
+            
             system_prompt = (
-                "당신은 노인 복지센터 AI 분석가입니다.\n"
-                "최근 대화를 보고, 사용자의 외향/내향 변화를 감지해 주세요. 변화 감지를 최근 기록 우선으로 해주세요. 뉘앙스를 파악해주세요. 조용한게 좋다, 힘들다는 뉘앙스면 내향으로, 밖으로 나간다, 신체 활동, 건강한게 좋다 이런 뉘앙스면 외향으로 판단해주세요.\n"
-                "1) 외향(E)로 바뀌면 'NEW_E', "
-                "2) 내향(I)로 바뀌면 'NEW_I', "
-                "3) 변화 없거나 불확실하면 'NO_CHANGE'라고만 답하세요."
+                "당신은 노인 복지센터 AI 분석가입니다. 최근 대화를 바탕으로 사용자의 성향 변화 여부를 분석하세요. "
+                "아래 JSON 형식으로 결과를 출력하세요. 각 항목은 변경된 경우 새 값을, 변화가 없으면 'NO_CHANGE'로 출력하세요.\n"
+                "{\n"
+                '  "ei": "NEW_E" 또는 "NEW_I" 또는 "NO_CHANGE",\n'
+                '  "sn": "NEW_S" 또는 "NEW_N" 또는 "NO_CHANGE",\n'
+                '  "tf": "NEW_T" 또는 "NEW_F" 또는 "NO_CHANGE",\n'
+                '  "jp": "NEW_J" 또는 "NEW_P" 또는 "NO_CHANGE"\n'
+                "}\n"
+                "예를 들어, 만약 대화에서 내향적 성향이 강화되면 {\"ei\": \"NEW_I\", \"sn\": \"NO_CHANGE\", \"tf\": \"NO_CHANGE\", \"jp\": \"NO_CHANGE\"}와 같이 응답하세요."
             )
             user_prompt = f"최근 {days}일간 사용자 대화:\n{conversation_text}"
-
+            
             gpt_result = gpt_call(system_prompt, user_prompt)
             print("[DEBUG] GPT 분석 결과:", gpt_result)
-
-            # 현재 EI 조회
+            
+            try:
+                changes = json.loads(gpt_result)
+            except Exception as e:
+                return jsonify({"error": "GPT 결과 JSON 파싱 실패"}), 500
+            
+            # 현재 DB에 저장된 성향 조회
             sql_current = """
-                SELECT ei
+                SELECT ei, sn, tf, jp
                 FROM user_personality
-                WHERE user_id=%s
+                WHERE user_id = %s
                 ORDER BY id DESC
                 LIMIT 1
             """
             cursor.execute(sql_current, (user_id,))
-            row = cursor.fetchone()
-            if not row:
+            current_row = cursor.fetchone()
+            if not current_row:
                 return jsonify({"error": f"{user_id} 사용자의 기존 성향 데이터가 없습니다."}), 404
-
-            current_ei = row["ei"]
-            # 결과 해석
-            if gpt_result == "NEW_E" and current_ei != "E":
-                sql_update = """
-                    UPDATE user_personality
-                    SET ei='E'
-                    WHERE user_id=%s
-                    ORDER BY id DESC
-                    LIMIT 1
-                """
-                cursor.execute(sql_update, (user_id,))
-                conn.commit()
-                return jsonify({"message": "성향이 외향형(E)으로 업데이트되었습니다."}), 200
-
-            elif gpt_result == "NEW_I" and current_ei != "I":
-                sql_update = """
-                    UPDATE user_personality
-                    SET ei='I'
-                    WHERE user_id=%s
-                    ORDER BY id DESC
-                    LIMIT 1
-                """
-                cursor.execute(sql_update, (user_id,))
-                conn.commit()
-                return jsonify({"message": "성향이 내향형(I)으로 업데이트되었습니다."}), 200
-
-            elif gpt_result == "NO_CHANGE":
+            
+            # 각 성향 업데이트 결정 (NEW_ 접두사가 있으면 새 값, NO_CHANGE면 현재 값 유지)
+            def get_updated(current, change):
+                if change.startswith("NEW_"):
+                    return change[-1]  # 마지막 문자(E, I, S, N, T, F, J, P)
+                return current
+            
+            updated_ei = get_updated(current_row["ei"], changes.get("ei", "NO_CHANGE"))
+            updated_sn = get_updated(current_row["sn"], changes.get("sn", "NO_CHANGE"))
+            updated_tf = get_updated(current_row["tf"], changes.get("tf", "NO_CHANGE"))
+            updated_jp = get_updated(current_row["jp"], changes.get("jp", "NO_CHANGE"))
+            
+            # 만약 아무 것도 변경되지 않았다면
+            if (updated_ei == current_row["ei"] and updated_sn == current_row["sn"] and
+                updated_tf == current_row["tf"] and updated_jp == current_row["jp"]):
                 return jsonify({"message": "성향 변화 없음"}), 200
-            else:
-                return jsonify({"message": "성향 변화 없음 또는 이미 동일 성향"}), 200
-
+            
+            # 새 MBTI 문자열 생성
+            new_mbti = f"{updated_ei}{updated_sn}{updated_tf}{updated_jp}"
+            # 업데이트된 태그 재계산 (analyze_mbti_tags 함수 사용; 해당 함수는 아래에 정의됨)
+            new_tags = analyze_mbti_tags(new_mbti)
+            tags_str = ",".join(new_tags)
+            
+            sql_update = """
+                UPDATE user_personality
+                SET ei=%s, sn=%s, tf=%s, jp=%s, personality_tags=%s
+                WHERE user_id=%s
+                ORDER BY id DESC
+                LIMIT 1
+            """
+            cursor.execute(sql_update, (updated_ei, updated_sn, updated_tf, updated_jp, tags_str, user_id))
+            conn.commit()
+            
+            return jsonify({
+                "message": f"성향 업데이트 완료. 새 MBTI: {new_mbti}, 태그: {tags_str}"
+            }), 200
+            
     except Exception as e:
         print(f"[ERROR] 분석 실패: {e}")
         return jsonify({"error": "분석 중 오류 발생"}), 500
@@ -216,7 +215,7 @@ def analyze_user_conversation(user_id):
 
 
 # ---------------------------
-# 아래는 MBTI/온보딩 분석 로직 (함수)
+# 아래는 MBTI/온보딩 분석 로직 함수들
 # ---------------------------
 def analyze_13_answers(answers_13):
     if len(answers_13) != 13:
@@ -239,14 +238,13 @@ def analyze_mbti_from_10(answers_10):
         7: ('EI', {'A': 'E', 'B': 'I'}),
         8: ('TF', {'A': 'F', 'B': 'T'}),
         9: ('SN', {'A': 'N', 'B': 'S'}),
-        10:('JP', {'A': 'P', 'B': 'J'})
+        10: ('JP', {'A': 'P', 'B': 'J'})
     }
-    score = {'E':0,'I':0,'S':0,'N':0,'T':0,'F':0,'J':0,'P':0}
+    score = {'E':0, 'I':0, 'S':0, 'N':0, 'T':0, 'F':0, 'J':0, 'P':0}
     for i, ans in enumerate(answers_10, start=1):
         dim, ab_map = question_map[i]
         if ans in ab_map:
             score[ab_map[ans]] += 1
-
     ei = 'E' if score['E'] >= score['I'] else 'I'
     sn = 'S' if score['S'] >= score['N'] else 'N'
     tf = 'T' if score['T'] >= score['F'] else 'F'
@@ -279,17 +277,14 @@ def analyze_mbti_tags(mbti_str):
 
 def analyze_onboarding_tags(answers_3):
     tags = []
-    # 11번 (운동 선호)
     if answers_3[0] == 'A':
         tags.append("활동적")
     else:
         tags.append("정적인")
-    # 12번 (혼자 활동)
     if answers_3[1] == 'A':
         tags.append("내향적")
     else:
         tags.append("외향적")
-    # 13번 (조용한 활동)
     if answers_3[2] == 'A':
         tags.append("정적인")
     else:

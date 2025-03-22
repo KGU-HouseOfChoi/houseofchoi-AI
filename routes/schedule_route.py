@@ -1,11 +1,14 @@
 from flask import Blueprint, jsonify
-from db_utils import get_elderly_db_connection, get_personality_db_connection
 import pymysql
+from db_utils import get_capstone_db_connection
 
 schedule_bp = Blueprint("schedule_bp", __name__)
 
 def save_schedule(user_id, program_name):
-    conn = get_elderly_db_connection()
+    """
+    user_schedule 테이블에 일정 정보를 저장합니다.
+    """
+    conn = get_capstone_db_connection()
     try:
         with conn.cursor() as cursor:
             sql = """
@@ -21,8 +24,12 @@ def save_schedule(user_id, program_name):
     finally:
         conn.close()
 
+
 def save_conversation_log(user_id, user_message, assistant_response):
-    conn = get_personality_db_connection()
+    """
+    user_conversation_log 테이블에 대화 로그를 저장합니다.
+    """
+    conn = get_capstone_db_connection()
     try:
         with conn.cursor() as cursor:
             sql = """
@@ -38,13 +45,14 @@ def save_conversation_log(user_id, user_message, assistant_response):
     finally:
         conn.close()
 
+
 @schedule_bp.route("/schedule/<user_id>", methods=["GET"])
 def get_user_schedule(user_id):
     """
     GET /schedule/101
     일정 목록 조회
     """
-    conn = get_elderly_db_connection()
+    conn = get_capstone_db_connection()
     try:
         with conn.cursor() as cursor:
             sql = """
@@ -57,6 +65,7 @@ def get_user_schedule(user_id):
             rows = cursor.fetchall()
             return jsonify(rows), 200
     except Exception as e:
+        print(f"[ERROR] 일정 조회 실패: {e}")
         return jsonify({"error": "일정 조회 실패"}), 500
     finally:
         conn.close()
