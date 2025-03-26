@@ -1,7 +1,7 @@
 import random
 import pymysql
-from db_utils import get_capstone_db_connection
-from gpt_utils import gpt_call
+from utils.db_utils import get_capstone_db_connection
+from utils.gpt_utils import gpt_call
 
 def fetch_user_personality(user_id):
     """
