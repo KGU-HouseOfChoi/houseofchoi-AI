@@ -168,5 +168,5 @@ def migrate_csv_to_db(csv_file_path):
         analyze_program_category(pname)
 
 if __name__ == "__main__":
-    csv_path = "elderly_program.csv"
+    csv_path = "data/elderly_program.CSV"
     migrate_csv_to_db(csv_path)

@@ -1,7 +1,7 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify
 import pymysql
 import datetime
-from db_utils import get_capstone_db_connection
+from utils.db_utils import get_capstone_db_connection
 
 schedule_bp = Blueprint("schedule_bp", __name__)
 

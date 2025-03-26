@@ -1,8 +1,8 @@
 import json
 import pymysql
 from flask import Blueprint, request, jsonify
-from db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
-from gpt_utils import gpt_call
+from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
+from utils.gpt_utils import gpt_call
 
 personality_bp = Blueprint("personality_bp", __name__)
 
