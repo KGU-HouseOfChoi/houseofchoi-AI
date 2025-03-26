@@ -29,7 +29,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/flask-app:latest
+          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/${{secrets.DOCKER_HUB_IMAGENAME}}:latest
 
   deploy:
     runs-on: ubuntu-latest
