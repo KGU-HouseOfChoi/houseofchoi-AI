@@ -3,7 +3,7 @@ import random
 import pymysql
 
 from flask import Blueprint, jsonify, request
-from db_utils import get_capstone_db_connection
+from utils.db_utils import get_capstone_db_connection
 from .schedule_route import save_schedule
 
 recommend_routes = Blueprint('recommend_routes', __name__)

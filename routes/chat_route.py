@@ -1,9 +1,8 @@
-import random
 import pymysql
 from flask import Blueprint, request, jsonify
-from db_utils import get_capstone_db_connection
-from gpt_utils import gpt_call
-from chat_utils import (
+from utils.db_utils import get_capstone_db_connection
+from utils.gpt_utils import gpt_call
+from utils.chat_utils import (
     recommend_random_program,
     search_program_and_build_message,
     extract_requested_program,
