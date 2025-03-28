@@ -10,3 +10,7 @@ services:
       - FLASK_ENV=deploy
     env_file:
       - .env.deploy
+
+networks:
+  app-network:
+    external: true
