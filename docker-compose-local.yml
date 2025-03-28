@@ -12,7 +12,9 @@ services:
       - FLASK_ENV=local
     env_file:
       - .env.local
+    networks:
+      - be_app-network
 
 networks:
-  app-network:
+  be_app-network:
     external: true

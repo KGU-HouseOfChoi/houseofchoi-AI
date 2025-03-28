@@ -7,6 +7,7 @@ from routes.chat_route import chat_bp
 from routes.schedule_route import schedule_bp
 from routes.personality_route import personality_bp
 from routes.recommend_routes import recommend_routes
+from routes.test_route import test_bp, db_ns
 
 # flask_restx 로드
 from flask_restx import Api
@@ -15,7 +16,7 @@ from flask_restx import Api
 load_dotenv()
 
 # swagger-ui 로드
-api = Api(version='1.0', title='API', description='어르심 AI API', doc="/api-docs")
+api = Api(version='1.0', title='어르심 API', description='어르심 AI API', doc="/api-docs")
 
 def create_app():
     # Flask 앱 생성
@@ -32,6 +33,10 @@ def create_app():
     app.register_blueprint(schedule_bp)
     app.register_blueprint(personality_bp)
     app.register_blueprint(recommend_routes)
+    app.register_blueprint(test_bp)
+
+    # swagger-ui api 매핑
+    api.add_namespace(db_ns)
 
     return app
 
