@@ -88,7 +88,7 @@ class Chat(Resource):
             if success:
                 response_text = f"✅ '{recommended_program}' 일정이 등록되었습니다!"
                 save_conversation_log(user_id, user_message, response_text)
-                return jsonify({"user_id": user_id, "schedule": response_text}), 200
+                return jsonify({"user_id": user_id, "schedule": response_text})
             else:
                 return jsonify({"error": "일정 등록 실패"}), 500
 
@@ -198,7 +198,7 @@ class ChatLog(Resource):
                 """
                 cursor.execute(sql, (user_id,))
                 rows = cursor.fetchall()
-                return jsonify(rows), 200
+                return jsonify(rows)
         except Exception as e:
             return jsonify({"error": f"대화 로그 조회 실패: {e}"}), 500
         finally:

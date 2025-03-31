@@ -5,7 +5,7 @@ from flask_cors import CORS
 # Blueprint 임포트
 from routes.chat_route import chat_bp, chat_ns
 from routes.schedule_route import schedule_bp
-from routes.personality_route import personality_bp
+from routes.personality_route import personality_bp, personality_ns
 from routes.recommend_routes import recommend_routes
 from routes.test_route import test_bp, db_ns
 
@@ -38,7 +38,7 @@ def create_app():
     # swagger-ui api 매핑
     api.add_namespace(db_ns)
     api.add_namespace(chat_ns, path='/chat')
-
+    api.add_namespace(personality_ns, path='/personality')
 
     return app
 
