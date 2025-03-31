@@ -7,7 +7,7 @@ from routes.chat_route import chat_bp, chat_ns
 from routes.schedule_route import schedule_bp
 from routes.personality_route import personality_bp, personality_ns
 from routes.recommend_routes import recommend_routes
-from routes.test_route import test_bp, db_ns
+from routes.test_route import test_bp, test_ns
 
 # flask_restx 로드
 from flask_restx import Api
@@ -36,7 +36,7 @@ def create_app():
     app.register_blueprint(test_bp)
 
     # swagger-ui api 매핑
-    api.add_namespace(db_ns)
+    api.add_namespace(test_ns, path='/test')
     api.add_namespace(chat_ns, path='/chat')
     api.add_namespace(personality_ns, path='/personality')
 
