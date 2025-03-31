@@ -1,10 +1,25 @@
 import json
 import pymysql
 from flask import Blueprint, request, jsonify
+from flask_restx import Namespace, Resource, fields
+
 from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
 
 personality_bp = Blueprint("personality_bp", __name__)
+
+personality_ns = Namespace("personality", description="성격 분석 API")
+
+# 질문 목록 응답 모델
+questions_model = personality_ns.model("QuestionsResponse", {
+    "questions": fields.List(fields.String, description="성격 유형 테스트 질문 목록")
+})
+
+# 분석 요청 모델
+analyze_request_model = personality_ns.model("AnalyzeRequest", {
+    "user_id": fields.String(required=True, description="사용자 고유 ID"),
+    "answers": fields.List(fields.String, required=True, description="총 13개의 A/B 형식 답변 리스트")
+})
 
 # 1) 13문항 질문 (온보딩)
 QUESTIONS = [
@@ -23,195 +38,289 @@ QUESTIONS = [
     {"id": 13, "question": "조용한 활동을 선호하시나요?", "choices": ["(A) 예", "(B) 아니요"]},
 ]
 
-@personality_bp.route("/questions", methods=["GET"])
-def get_questions():
-    return jsonify({"questions": QUESTIONS}), 200
+
+@personality_ns.route("/questions")
+class PersonalityQuestions(Resource):
+    @personality_ns.doc(description="성격 유형 테스트에 사용되는 13개의 질문을 반환합니다.")
+    @personality_ns.response(200, "성공", questions_model)
+    def get(self):
+        """
+        성격 테스트 질문 목록을 반환하는 API
+
+        **응답 예시**
+        ```json
+        {
+            "questions": [
+                "질문 1",
+                "질문 2",
+                "...",
+                "질문 13"
+            ]
+        }
+        ```
+        """
+        return jsonify({"questions": QUESTIONS})
 
 
-@personality_bp.route("/analyze", methods=["POST"])
-def analyze_personality():
-    data = request.json
-    user_id = data.get("user_id")
-    answers_13 = data.get("answers", [])
+@personality_ns.route("/analyze")
+class AnalyzePersonality(Resource):
+    @personality_ns.expect(analyze_request_model)
+    @personality_ns.doc(
+        description="사용자의 13개 답변을 분석하여 MBTI 성격 유형과 추가 성격 태그를 반환합니다.",
+        responses={
+            200 : "성공",
+            400 : "잘못된 요청이 들어옴",
+            500 : "서버 내부 오류"
+        }
+    )
+    def post(self):
+        """
+        사용자의 답변을 분석하여 MBTI 유형 및 추가 성격 태그를 반환하는 API
 
-    if not user_id:
-        return jsonify({"error": "user_id가 필요합니다."}), 400
-    if len(answers_13) != 13:
-        return jsonify({"error": "정확히 13개의 A/B 답변이 필요합니다."}), 400
+        **요청 Body 예시**
+        ```json
+        {
+            "user_id": "12345",
+            "answers": ["A", "B", "A", "B", "A", "B", "A", "B", "A", "B", "A", "B", "A"]
+        }
+        ```
 
-    try:
-        mbti_str, all_tags = analyze_13_answers(answers_13)
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        **응답 예시**
+        ```json
+        {
+            "user_id": "12345",
+            "mbti": "INTP",
+            "personality_tags": ["논리적", "분석적", "창의적"]
+        }
+        ```
 
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            tags_str = ",".join(all_tags)
-            sql = """
-            INSERT INTO user_personality (user_id, ei, sn, tf, jp, personality_tags)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """
-            ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
-            cursor.execute(sql, (user_id, ei, sn, tf, jp, tags_str))
-            conn.commit()
-    except Exception as ex:
-        return jsonify({"error": f"DB 저장 오류: {str(ex)}"}), 500
-    finally:
-        conn.close()
+        **오류 응답 예시**
+        ```json
+        {
+            "error": "정확히 13개의 A/B 답변이 필요합니다."
+        }
+        ```
+        """
+        data = request.json
+        user_id = data.get("user_id")
+        answers_13 = data.get("answers", [])
 
-    return jsonify({
-        "user_id": user_id,
-        "mbti": mbti_str,
-        "personality_tags": all_tags
-    }), 200
+        if not user_id:
+            return jsonify({"error": "user_id가 필요합니다."}), 400
+        if len(answers_13) != 13:
+            return jsonify({"error": "정확히 13개의 A/B 답변이 필요합니다."}), 400
 
+        try:
+            mbti_str, all_tags = analyze_13_answers(answers_13)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
-@personality_bp.route("/analysis/<int:user_id>", methods=["GET"])
-def get_analysis(user_id):
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT user_id, ei, sn, tf, jp, personality_tags, created_at
-                FROM user_personality
-                WHERE user_id = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql, (user_id,))
-            row = cursor.fetchone()
-    except Exception as ex:
-        return jsonify({"error": f"DB 조회 오류: {str(ex)}"}), 500
-    finally:
-        conn.close()
+        conn = get_capstone_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                tags_str = ",".join(all_tags)
+                sql = """
+                INSERT INTO user_personality (user_id, ei, sn, tf, jp, personality_tags)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
+                cursor.execute(sql, (user_id, ei, sn, tf, jp, tags_str))
+                conn.commit()
+        except Exception as ex:
+            return jsonify({"error": f"DB 저장 오류: {str(ex)}"}), 500
+        finally:
+            conn.close()
 
-    if not row:
-        return jsonify({"error": f"user_id {user_id} 데이터가 없습니다."}), 404
-
-    mbti_str = f"{row['ei']}{row['sn']}{row['tf']}{row['jp']}"
-    tags_list = row["personality_tags"].split(',') if row["personality_tags"] else []
-
-    return jsonify({
-        "user_id": row["user_id"],
-        "ei": row["ei"],
-        "sn": row["sn"],
-        "tf": row["tf"],
-        "jp": row["jp"],
-        "mbti": mbti_str,
-        "personality_tags": tags_list,
-        "created_at": str(row["created_at"])
-    }), 200
+        return jsonify({
+            "user_id": user_id,
+            "mbti": mbti_str,
+            "personality_tags": all_tags
+        }), 200
 
 
-@personality_bp.route("/analyze/<user_id>", methods=["POST"])
-def analyze_user_conversation(user_id):
-    """
-    POST /analyze/<user_id>?days=30
-    최근 N일(기본 30일)간의 대화 로그를 기반으로, 사용자의 성향 변화(각 축: ei, sn, tf, jp)를 분석하여
-    변화가 감지되면 DB의 해당 필드와 태그(personality_tags)를 업데이트합니다.
-    
-    GPT에게 아래와 같이 JSON 형식으로 응답하도록 요청합니다:
-    {
-      "ei": "NEW_E" 또는 "NEW_I" 또는 "NO_CHANGE",
-      "sn": "NEW_S" 또는 "NEW_N" 또는 "NO_CHANGE",
-      "tf": "NEW_T" 또는 "NEW_F" 또는 "NO_CHANGE",
-      "jp": "NEW_J" 또는 "NEW_P" 또는 "NO_CHANGE"
-    }
-    """
-    days = request.args.get("days", 30)
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql_logs = """
-                SELECT user_message
-                FROM user_conversation_log
-                WHERE user_id = %s
-                  AND timestamp >= NOW() - INTERVAL %s DAY
-                ORDER BY timestamp DESC
-            """
-            cursor.execute(sql_logs, (user_id, days))
-            logs = cursor.fetchall()
-            if not logs:
-                return jsonify({"message": f"{days}일간 대화 기록이 없어 분석 불가"}), 400
+@personality_ns.route("/analysis/<int:user_id>")
+class Analysis(Resource):
+    @personality_ns.doc(
+        description="사용자의 MBTI 유형 및 추가 성격 태그를 반환하는 API",
+        responses={
+            200: "성공",
+            400: "잘못된 요청이 들어옴",
+            404: "유저 데이터가 없는 경우",
+            500: "서버 내부 오류"
+        }
+    )
+    def get(self, user_id):
+        """
+        사용자의 MBTI 유형 및 추가 성격 태그를 반환합니다.
 
-            conversation_text = "\n".join([row["user_message"] for row in logs])
-            
-            system_prompt = (
-                "당신은 노인 복지센터 AI 분석가입니다. 최근 대화를 바탕으로 사용자의 성향 변화 여부를 분석하세요. "
-                "아래 JSON 형식으로 결과를 출력하세요. 각 항목은 변경된 경우 새 값을, 변화가 없으면 'NO_CHANGE'로 출력하세요.\n"
-                "{\n"
-                '  "ei": "NEW_E" 또는 "NEW_I" 또는 "NO_CHANGE",\n'
-                '  "sn": "NEW_S" 또는 "NEW_N" 또는 "NO_CHANGE",\n'
-                '  "tf": "NEW_T" 또는 "NEW_F" 또는 "NO_CHANGE",\n'
-                '  "jp": "NEW_J" 또는 "NEW_P" 또는 "NO_CHANGE"\n'
-                "}\n"
-                "예를 들어, 만약 대화에서 내향적 성향이 강화되면 {\"ei\": \"NEW_I\", \"sn\": \"NO_CHANGE\", \"tf\": \"NO_CHANGE\", \"jp\": \"NO_CHANGE\"}와 같이 응답하세요."
-            )
-            user_prompt = f"최근 {days}일간 사용자 대화:\n{conversation_text}"
-            
-            gpt_result = gpt_call(system_prompt, user_prompt)
-            print("[DEBUG] GPT 분석 결과:", gpt_result)
-            
-            try:
-                changes = json.loads(gpt_result)
-            except Exception as e:
-                return jsonify({"error": "GPT 결과 JSON 파싱 실패"}), 500
-            
-            # 현재 DB에 저장된 성향 조회
-            sql_current = """
-                SELECT ei, sn, tf, jp
-                FROM user_personality
-                WHERE user_id = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql_current, (user_id,))
-            current_row = cursor.fetchone()
-            if not current_row:
-                return jsonify({"error": f"{user_id} 사용자의 기존 성향 데이터가 없습니다."}), 404
-            
-            # 각 성향 업데이트 결정 (NEW_ 접두사가 있으면 새 값, NO_CHANGE면 현재 값 유지)
-            def get_updated(current, change):
-                if change.startswith("NEW_"):
-                    return change[-1]  # 마지막 문자(E, I, S, N, T, F, J, P)
-                return current
-            
-            updated_ei = get_updated(current_row["ei"], changes.get("ei", "NO_CHANGE"))
-            updated_sn = get_updated(current_row["sn"], changes.get("sn", "NO_CHANGE"))
-            updated_tf = get_updated(current_row["tf"], changes.get("tf", "NO_CHANGE"))
-            updated_jp = get_updated(current_row["jp"], changes.get("jp", "NO_CHANGE"))
-            
-            # 만약 아무 것도 변경되지 않았다면
-            if (updated_ei == current_row["ei"] and updated_sn == current_row["sn"] and
-                updated_tf == current_row["tf"] and updated_jp == current_row["jp"]):
-                return jsonify({"message": "성향 변화 없음"}), 200
-            
-            # 새 MBTI 문자열 생성
-            new_mbti = f"{updated_ei}{updated_sn}{updated_tf}{updated_jp}"
-            # 업데이트된 태그 재계산 (analyze_mbti_tags 함수 사용; 해당 함수는 아래에 정의됨)
-            new_tags = analyze_mbti_tags(new_mbti)
-            tags_str = ",".join(new_tags)
-            
-            sql_update = """
-                UPDATE user_personality
-                SET ei=%s, sn=%s, tf=%s, jp=%s, personality_tags=%s
-                WHERE user_id=%s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql_update, (updated_ei, updated_sn, updated_tf, updated_jp, tags_str, user_id))
-            conn.commit()
-            
-            return jsonify({
-                "message": f"성향 업데이트 완료. 새 MBTI: {new_mbti}, 태그: {tags_str}"
-            }), 200
-            
-    except Exception as e:
-        print(f"[ERROR] 분석 실패: {e}")
-        return jsonify({"error": "분석 중 오류 발생"}), 500
-    finally:
-        conn.close()
+        :param user_id:
+        :return:
+        ```json
+        {
+            "user_id": row["user_id"],
+            "ei": row["ei"],
+            "sn": row["sn"],
+            "tf": row["tf"],
+            "jp": row["jp"],
+            "mbti": mbti_str,
+            "personality_tags": tags_list,
+            "created_at": str(row["created_at"])
+        }
+        ```
+        """
+        conn = get_capstone_db_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                sql = """
+                    SELECT user_id, ei, sn, tf, jp, personality_tags, created_at
+                    FROM user_personality
+                    WHERE user_id = %s
+                    ORDER BY id DESC
+                    LIMIT 1
+                """
+                cursor.execute(sql, (user_id,))
+                row = cursor.fetchone()
+        except Exception as ex:
+            return jsonify({"error": f"DB 조회 오류: {str(ex)}"}), 500
+        finally:
+            conn.close()
+
+        if not row:
+            return jsonify({"error": f"user_id {user_id} 데이터가 없습니다."}), 404
+
+        mbti_str = f"{row['ei']}{row['sn']}{row['tf']}{row['jp']}"
+        tags_list = row["personality_tags"].split(',') if row["personality_tags"] else []
+
+        return jsonify({
+            "user_id": row["user_id"],
+            "ei": row["ei"],
+            "sn": row["sn"],
+            "tf": row["tf"],
+            "jp": row["jp"],
+            "mbti": mbti_str,
+            "personality_tags": tags_list,
+            "created_at": str(row["created_at"])
+        }), 200
+
+    @personality_ns.doc(
+        description="최근 30일의 대화내용을 바탕으로 사용자의 성향을 재분석하는 API",
+        responses={
+            200: "성공",
+            400: "잘못된 요청이 들어옴",
+            404: "유저 성향 데이터가 없는 경우",
+            500: "서버 내부 오류"
+        }
+    )
+    def post(self, user_id):
+        """
+        최근 30일의 대화내용을 바탕으로 사용자의 성향을 재분석합니다.
+
+        최근 N일(기본 30일)간의 대화 로그를 기반으로, 사용자의 성향 변화(각 축: ei, sn, tf, jp)를 분석하여
+        변화가 감지되면 DB의 해당 필드와 태그(personality_tags)를 업데이트합니다.
+
+        GPT에게 아래와 같이 JSON 형식으로 응답하도록 요청합니다:
+        ```
+        {
+          "ei": "NEW_E" 또는 "NEW_I" 또는 "NO_CHANGE",
+          "sn": "NEW_S" 또는 "NEW_N" 또는 "NO_CHANGE",
+          "tf": "NEW_T" 또는 "NEW_F" 또는 "NO_CHANGE",
+          "jp": "NEW_J" 또는 "NEW_P" 또는 "NO_CHANGE"
+        }
+        ```
+        """
+        days = request.args.get("days", 30)
+        conn = get_capstone_db_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                sql_logs = """
+                    SELECT user_message
+                    FROM user_conversation_log
+                    WHERE user_id = %s
+                      AND timestamp >= NOW() - INTERVAL %s DAY
+                    ORDER BY timestamp DESC
+                """
+                cursor.execute(sql_logs, (user_id, days))
+                logs = cursor.fetchall()
+                if not logs:
+                    return jsonify({"message": f"{days}일간 대화 기록이 없어 분석 불가"}), 400
+
+                conversation_text = "\n".join([row["user_message"] for row in logs])
+
+                system_prompt = (
+                    "당신은 노인 복지센터 AI 분석가입니다. 최근 대화를 바탕으로 사용자의 성향 변화 여부를 분석하세요. "
+                    "아래 JSON 형식으로 결과를 출력하세요. 각 항목은 변경된 경우 새 값을, 변화가 없으면 'NO_CHANGE'로 출력하세요.\n"
+                    "{\n"
+                    '  "ei": "NEW_E" 또는 "NEW_I" 또는 "NO_CHANGE",\n'
+                    '  "sn": "NEW_S" 또는 "NEW_N" 또는 "NO_CHANGE",\n'
+                    '  "tf": "NEW_T" 또는 "NEW_F" 또는 "NO_CHANGE",\n'
+                    '  "jp": "NEW_J" 또는 "NEW_P" 또는 "NO_CHANGE"\n'
+                    "}\n"
+                    "예를 들어, 만약 대화에서 내향적 성향이 강화되면 {\"ei\": \"NEW_I\", \"sn\": \"NO_CHANGE\", \"tf\": \"NO_CHANGE\", \"jp\": \"NO_CHANGE\"}와 같이 응답하세요."
+                )
+                user_prompt = f"최근 {days}일간 사용자 대화:\n{conversation_text}"
+
+                gpt_result = gpt_call(system_prompt, user_prompt)
+                print("[DEBUG] GPT 분석 결과:", gpt_result)
+
+                try:
+                    changes = json.loads(gpt_result)
+                except Exception as e:
+                    return jsonify({"error": "GPT 결과 JSON 파싱 실패"}), 500
+
+                # 현재 DB에 저장된 성향 조회
+                sql_current = """
+                    SELECT ei, sn, tf, jp
+                    FROM user_personality
+                    WHERE user_id = %s
+                    ORDER BY id DESC
+                    LIMIT 1
+                """
+                cursor.execute(sql_current, (user_id,))
+                current_row = cursor.fetchone()
+                if not current_row:
+                    return jsonify({"error": f"{user_id} 사용자의 기존 성향 데이터가 없습니다."}), 404
+
+                # 각 성향 업데이트 결정 (NEW_ 접두사가 있으면 새 값, NO_CHANGE면 현재 값 유지)
+                def get_updated(current, change):
+                    if change.startswith("NEW_"):
+                        return change[-1]  # 마지막 문자(E, I, S, N, T, F, J, P)
+                    return current
+
+                updated_ei = get_updated(current_row["ei"], changes.get("ei", "NO_CHANGE"))
+                updated_sn = get_updated(current_row["sn"], changes.get("sn", "NO_CHANGE"))
+                updated_tf = get_updated(current_row["tf"], changes.get("tf", "NO_CHANGE"))
+                updated_jp = get_updated(current_row["jp"], changes.get("jp", "NO_CHANGE"))
+
+                # 만약 아무 것도 변경되지 않았다면
+                if (updated_ei == current_row["ei"] and updated_sn == current_row["sn"] and
+                    updated_tf == current_row["tf"] and updated_jp == current_row["jp"]):
+                    return jsonify({"message": "성향 변화 없음"}), 200
+
+                # 새 MBTI 문자열 생성
+                new_mbti = f"{updated_ei}{updated_sn}{updated_tf}{updated_jp}"
+                # 업데이트된 태그 재계산 (analyze_mbti_tags 함수 사용; 해당 함수는 아래에 정의됨)
+                new_tags = analyze_mbti_tags(new_mbti)
+                tags_str = ",".join(new_tags)
+
+                sql_update = """
+                    UPDATE user_personality
+                    SET ei=%s, sn=%s, tf=%s, jp=%s, personality_tags=%s
+                    WHERE user_id=%s
+                    ORDER BY id DESC
+                    LIMIT 1
+                """
+                cursor.execute(sql_update, (updated_ei, updated_sn, updated_tf, updated_jp, tags_str, user_id))
+                conn.commit()
+
+                return jsonify({
+                    "message": f"성향 업데이트 완료. 새 MBTI: {new_mbti}, 태그: {tags_str}"
+                }), 200
+
+        except Exception as e:
+            print(f"[ERROR] 분석 실패: {e}")
+            return jsonify({"error": "분석 중 오류 발생"}), 500
+        finally:
+            conn.close()
 
 
 # ---------------------------
