@@ -4,9 +4,9 @@ from flask_cors import CORS
 
 # Blueprint 임포트
 from routes.chat_route import chat_bp, chat_ns
-from routes.schedule_route import schedule_bp
+from routes.schedule_route import schedule_bp, schedule_ns
 from routes.personality_route import personality_bp, personality_ns
-from routes.recommend_routes import recommend_routes
+from routes.recommend_routes import recommend_routes, recommend_ns
 from routes.test_route import test_bp, test_ns
 
 # flask_restx 로드
@@ -39,6 +39,8 @@ def create_app():
     api.add_namespace(test_ns, path='/test')
     api.add_namespace(chat_ns, path='/chat')
     api.add_namespace(personality_ns, path='/personality')
+    api.add_namespace(schedule_ns, path='/schedule')
+    api.add_namespace(recommend_ns, path='/recommend')
 
     return app
 
