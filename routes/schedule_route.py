@@ -1,9 +1,45 @@
 from flask import Blueprint, jsonify
 import pymysql
 import datetime
+
+from flask_restx import Namespace, Resource
+
 from utils.db_utils import get_capstone_db_connection
 
 schedule_bp = Blueprint("schedule_bp", __name__)
+schedule_ns = Namespace("schedule_ns", description="schedule_route")
+
+@schedule_ns.route("/<user_id>")
+class ScheduleRoute(Resource):
+    @schedule_ns.doc(
+        description="""
+            일정 목록을 조회하는 API
+            (program_name, 요일1~요일5, 시작시간, 종료시간 등)
+        """
+    )
+    def get(self, user_id):
+        """
+        일정 목록을 조회하는 API
+        """
+        conn = get_capstone_db_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                sql = """
+                    SELECT schedule_id, user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간, created_at
+                    FROM user_schedule
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                """
+                cursor.execute(sql, (user_id,))
+                rows = cursor.fetchall()
+                rows = [make_json_serializable(row) for row in rows]
+                return jsonify(rows), 200
+        except Exception as e:
+            print(f"[ERROR] 일정 조회 실패: {e}")
+            return jsonify({"error": "일정 조회 실패"}), 500
+        finally:
+            conn.close()
+
 
 def save_schedule(user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간):
     """
@@ -78,28 +114,3 @@ def make_json_serializable(row):
         if isinstance(value, (datetime.datetime, datetime.date, datetime.timedelta)):
             row[key] = str(value)
     return row
-
-@schedule_bp.route("/schedule/<user_id>", methods=["GET"])
-def get_user_schedule(user_id):
-    """
-    GET /schedule/101
-    일정 목록을 조회합니다. (program_name, 요일1~요일5, 시작시간, 종료시간 등)
-    """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT schedule_id, user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간, created_at
-                FROM user_schedule
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-            """
-            cursor.execute(sql, (user_id,))
-            rows = cursor.fetchall()
-            rows = [make_json_serializable(row) for row in rows]
-            return jsonify(rows), 200
-    except Exception as e:
-        print(f"[ERROR] 일정 조회 실패: {e}")
-        return jsonify({"error": "일정 조회 실패"}), 500
-    finally:
-        conn.close()
