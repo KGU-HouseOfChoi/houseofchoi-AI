@@ -8,7 +8,9 @@ services:
       - FLASK_ENV=deploy
     env_file:
       - .env.deploy
+    networks:
+      - backend_app-network
 
 networks:
-  app-network:
+  backend_app-network:
     external: true
