@@ -59,6 +59,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd ~/ai
+            echo "${{ secrets.ENV_deploy }}" | base64 -d > .env.deploy
             docker-compose pull
             docker-compose down
             docker-compose up -d --force-recreate --remove-orphans
@@ -72,3 +73,4 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             rm -f ~/ai/docker-compose.yml
+            rm -f ~/ai/.env.deploy
