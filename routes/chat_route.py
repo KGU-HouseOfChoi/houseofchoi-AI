@@ -1,5 +1,5 @@
 import pymysql
-from flask import Blueprint, request, jsonify
+from flask import request, jsonify
 from flask_restx import Resource, Namespace, fields
 
 from utils.db_utils import get_capstone_db_connection
@@ -12,9 +12,7 @@ from utils.chat_utils import (
 )
 from routes.schedule_route import save_schedule, save_conversation_log
 
-chat_bp = Blueprint("chat_bp", __name__)
-
-# Swagger-Ui 설정
+# Swagger Namespace
 chat_ns = Namespace("chat", description="Chat related operations")
 
 # Swagger 문서 Dto

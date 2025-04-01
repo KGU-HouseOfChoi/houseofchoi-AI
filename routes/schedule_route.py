@@ -6,7 +6,7 @@ from flask_restx import Namespace, Resource
 
 from utils.db_utils import get_capstone_db_connection
 
-schedule_bp = Blueprint("schedule_bp", __name__)
+# Swagger Namespace
 schedule_ns = Namespace("schedule_ns", description="schedule_route")
 
 @schedule_ns.route("/<user_id>")
