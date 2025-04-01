@@ -3,11 +3,11 @@ from dotenv import load_dotenv
 from flask_cors import CORS
 
 # Blueprint 임포트
-from routes.chat_route import chat_bp, chat_ns
-from routes.schedule_route import schedule_bp, schedule_ns
-from routes.personality_route import personality_bp, personality_ns
-from routes.recommend_routes import recommend_routes, recommend_ns
-from routes.test_route import test_bp, test_ns
+from routes.chat_route import chat_ns
+from routes.schedule_route import schedule_ns
+from routes.personality_route import personality_ns
+from routes.recommend_routes import recommend_ns
+from routes.test_route import test_ns
 
 # flask_restx 로드
 from flask_restx import Api
@@ -27,13 +27,6 @@ def create_app():
 
     # swagger-ui 설정
     api.init_app(app)
-
-    # Blueprint 등록
-    app.register_blueprint(chat_bp)
-    app.register_blueprint(schedule_bp)
-    app.register_blueprint(personality_bp)
-    app.register_blueprint(recommend_routes)
-    app.register_blueprint(test_bp)
 
     # swagger-ui api 매핑
     api.add_namespace(test_ns, path='/test')

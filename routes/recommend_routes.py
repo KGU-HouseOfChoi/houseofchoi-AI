@@ -2,13 +2,13 @@ import datetime
 import random
 import pymysql
 
-from flask import Blueprint, jsonify, request
+from flask import request
 from flask_restx import Namespace, Resource, fields
 
 from utils.db_utils import get_capstone_db_connection
 from .schedule_route import save_schedule
 
-recommend_routes = Blueprint('recommend_routes', __name__)
+# Swagger NameSpace
 recommend_ns = Namespace('recommend_ns', description='Recommend Routes')
 
 # Swagger 모델 정의

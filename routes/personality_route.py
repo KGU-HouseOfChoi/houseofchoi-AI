@@ -1,13 +1,12 @@
 import json
 import pymysql
-from flask import Blueprint, request, jsonify
+from flask import request, jsonify
 from flask_restx import Namespace, Resource, fields
 
 from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
 
-personality_bp = Blueprint("personality_bp", __name__)
-
+# Swagger Namespace
 personality_ns = Namespace("personality", description="성격 분석 API")
 
 # 질문 목록 응답 모델
