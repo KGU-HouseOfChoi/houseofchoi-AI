@@ -16,7 +16,7 @@ from flask_restx import Api
 load_dotenv()
 
 # swagger-ui 로드
-api = Api(version='1.0', title='어르심 API', description='어르심 AI API', doc="/ai/api-docs")
+api = Api(version='1.0', title='어르심 API', description='어르심 AI API', doc="/api-docs")
 
 def create_app():
     # Flask 앱 생성
