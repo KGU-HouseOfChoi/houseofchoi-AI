@@ -134,15 +134,6 @@ def post(body: AnalyzeRequest):
         personality_tags=all_tags
     )
 
-@personality_ns.doc(
-    description="사용자의 MBTI 유형 및 추가 성격 태그를 반환하는 API",
-    responses={
-        200: "성공",
-        400: "잘못된 요청이 들어옴",
-        404: "유저 데이터가 없는 경우",
-        500: "서버 내부 오류"
-    }
-)
 @personality_router.get("/analysis/{user_id}", response_model=MBTI)
 def get_user_mbti(user_id: int):
     """
