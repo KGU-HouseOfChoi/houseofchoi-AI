@@ -1,5 +1,9 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
+
+# router module
+from routes.test_route import test_router
+
 # from flask_cors import CORS
 # from flask import Flask
 
@@ -8,7 +12,6 @@ from dotenv import load_dotenv
 # from routes.schedule_route import schedule_ns
 # from routes.personality_route import personality_ns
 # from routes.recommend_routes import recommend_ns
-# from routes.test_route import test_ns
 
 # flask_restx 로드
 # from flask_restx import Api
@@ -24,6 +27,8 @@ app = FastAPI(
 @app.get("/")
 async def root():
     return {"message": "어르심 AI 기능 관련 API입니다."}
+
+app.include_router(test_router, prefix="/test", tags=["test"])
 
 # # swagger-ui 로드
 # api = Api(version='1.0', title='어르심 API', description='어르심 AI API', doc="/api-docs")
