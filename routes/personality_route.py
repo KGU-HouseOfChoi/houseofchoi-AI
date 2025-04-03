@@ -1,30 +1,15 @@
 import json
-from typing import List
-
 import pymysql
+
+# FastAPI
+from typing import List
 from fastapi import APIRouter, status, HTTPException
 from fastapi.params import Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from flask import request, jsonify
-from flask_restx import Namespace, Resource, fields
 
 from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
-
-# Swagger Namespace
-personality_ns = Namespace("personality", description="성격 분석 API")
-
-# 질문 목록 응답 모델
-questions_model = personality_ns.model("QuestionsResponse", {
-    "questions": fields.List(fields.String, description="성격 유형 테스트 질문 목록")
-})
-
-# 분석 요청 모델
-# analyze_request_model = personality_ns.model("AnalyzeRequest", {
-#     "user_id": fields.String(required=True, description="사용자 고유 ID"),
-#     "answers": fields.List(fields.String, required=True, description="총 13개의 A/B 형식 답변 리스트")
-# })
 
 personality_router = APIRouter()
 
