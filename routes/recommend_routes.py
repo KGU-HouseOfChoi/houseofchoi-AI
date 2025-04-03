@@ -4,26 +4,12 @@ import pymysql
 
 from fastapi import APIRouter, status, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import Optional
 
+from model.recommend_model import ScheduleRequest
 from utils.db_utils import get_capstone_db_connection
 from .schedule_route import save_schedule
 
 recommend_router = APIRouter()
-
-# Request Model 정의
-class ScheduleRequest(BaseModel):
-    user_id: int
-    program_name: str
-    start_time: str
-    end_time: str
-    day1: Optional[str] = None
-    day2: Optional[str] = None
-    day3: Optional[str] = None
-    day4: Optional[str] = None
-    day5: Optional[str] = None
-
 
 @recommend_router.get("/{user_id}")
 def get_recommend_programs(user_id):

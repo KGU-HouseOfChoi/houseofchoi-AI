@@ -12,18 +12,10 @@ from utils.chat_utils import (
     get_last_recommended_program
 )
 from routes.schedule_route import save_schedule, save_conversation_log
+from model.chatbot_model import ChatbotRequest, ScheduleResponse
 
 # API router
 chat_router = APIRouter()
-
-# Chatbot Model
-class ChatbotRequest(BaseModel):
-    user_id: str
-    message: str
-
-class ScheduleResponse(BaseModel):
-    user_id: str
-    schedule: str
 
 @chat_router.post("")
 def post(body: ChatbotRequest):
@@ -32,13 +24,13 @@ def post(body: ChatbotRequest):
         - `user_id`: 사용자의 고유 ID
         - `message`: 사용자가 선택한 메시지
     """
-    if not ChatbotRequest:
+    if not body:
         raise HTTPException(
             status_code=400,
             detail="JSON body is required"
         )
-    user_id = ChatbotRequest.user_id
-    user_message = ChatbotRequest.message
+    user_id = body.user_id
+    user_message = body.message
 
     # (A) "예", "등록" 등으로 일정 등록 의사 표시
     if user_message.lower() in ["예", "네", "등록", "등록할래요"]:
