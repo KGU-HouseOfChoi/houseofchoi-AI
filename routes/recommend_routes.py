@@ -2,99 +2,122 @@ import datetime
 import random
 import pymysql
 
-from flask import request
-from flask_restx import Namespace, Resource, fields
+from fastapi import APIRouter, status, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from typing import Optional
 
 from utils.db_utils import get_capstone_db_connection
 from .schedule_route import save_schedule
 
-# Swagger NameSpace
-recommend_ns = Namespace('recommend_ns', description='Recommend Routes')
+recommend_router = APIRouter()
 
-# Swagger 모델 정의
-recommend_post_model = recommend_ns.model("RecommendPost", {
-    "user_id": fields.Integer(required=True, description="사용자 ID"),
-    "program_name": fields.String(required=True, description="프로그램 이름"),
-    "요일1": fields.String(description="요일1"),
-    "요일2": fields.String(description="요일2"),
-    "요일3": fields.String(description="요일3"),
-    "요일4": fields.String(description="요일4"),
-    "요일5": fields.String(description="요일5"),
-    "시작시간": fields.String(required=True, description="시작 시간"),
-    "종료시간": fields.String(required=True, description="종료 시간")
-})
+# Request Model 정의
+class ScheduleRequest(BaseModel):
+    user_id: int
+    program_name: str
+    start_time: str
+    end_time: str
+    day1: Optional[str] = None
+    day2: Optional[str] = None
+    day3: Optional[str] = None
+    day4: Optional[str] = None
+    day5: Optional[str] = None
 
 
-@recommend_ns.route("/<int:user_id>")
-class RecommendAllPrograms(Resource):
-    @recommend_ns.doc("사용자 성향 기반 추천 프로그램 반환 API")
-    def get(self, user_id):
-        """
-        사용자 성향을 기반으로 추천 프로그램 목록을 반환합니다.
-        """
-        conn = get_capstone_db_connection()
-        try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                sql = """
-                    SELECT personality_tags
-                    FROM user_personality
-                    WHERE user_id = %s
-                    ORDER BY id DESC
-                    LIMIT 1
-                """
-                cursor.execute(sql, (user_id,))
-                row = cursor.fetchone()
-                if not row or not row.get("personality_tags"):
-                    return {"error": "사용자 성향 정보를 가져오지 못했습니다."}, 404
-                user_tags = [tag.strip() for tag in row["personality_tags"].split(",") if tag.strip()]
-        finally:
-            conn.close()
+@recommend_router.get("/{user_id}")
+def get_recommend_programs(user_id):
+    """
+    사용자 성향을 기반으로 추천 프로그램 목록을 반환합니다.
+    """
+    conn = get_capstone_db_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            sql = """
+                SELECT personality_tags
+                FROM user_personality
+                WHERE user_id = %s
+                ORDER BY id DESC
+                LIMIT 1
+            """
+            cursor.execute(sql, (user_id,))
+            row = cursor.fetchone()
+            if not row or not row.get("personality_tags"):
+                # return {"error": "사용자 성향 정보를 가져오지 못했습니다."}, 404
+                return JSONResponse(
+                    content={
+                        "error": "사용자 성향 정보를 가져오지 못했습니다."
+                    },
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+            user_tags = [tag.strip() for tag in row["personality_tags"].split(",") if tag.strip()]
+    finally:
+        conn.close()
 
-        conn = get_capstone_db_connection()
-        try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                sql = "SELECT * FROM elderly_programs"
-                cursor.execute(sql)
-                courses = cursor.fetchall()
-        finally:
-            conn.close()
+    conn = get_capstone_db_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            sql = "SELECT * FROM elderly_programs"
+            cursor.execute(sql)
+            courses = cursor.fetchall()
+    finally:
+        conn.close()
 
-        if not courses:
-            return {"error": "현재 등록된 프로그램이 없습니다."}, 404
+    if not courses:
+        return JSONResponse(
+            content={
+                "error": "현재 등록된 프로그램이 없습니다."
+            },
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+    matched_list = [course for course in courses if
+                    len(set(user_tags) & set(course.get("tags", "").split(","))) >= 2]
+    if not matched_list:
+        return JSONResponse(
+            content={
+                "message": "사용자 성향에 맞는 프로그램이 없습니다."
+            },
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+    return JSONResponse(
+        content={
+            "user_id" : user_id,
+            "matched_programs": matched_list
+        },
+        status_code=status.HTTP_200_OK
+    )
 
-        matched_list = [course for course in courses if
-                        len(set(user_tags) & set(course.get("tags", "").split(","))) >= 2]
-        if not matched_list:
-            return {"message": "사용자 성향에 맞는 프로그램이 없습니다."}, 404
+@recommend_router.post("/{user_id}")
+def save_program(user_id: int, body: ScheduleRequest):
+    """
+    추천된 프로그램을 사용자의 일정으로 등록합니다.
+    """
 
-        return {"user_id": user_id, "matched_programs": matched_list}
+    if body.user_id != user_id:
+        raise HTTPException(
+            detail="URL의 user_id와 요청 본문의 user_id가 일치하지 않습니다.",
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
 
-    @recommend_ns.doc("추천 프로그램을 사용자 일정에 등록하는 API")
-    @recommend_ns.expect(recommend_post_model)
-    def post(self, user_id):
-        """
-        추천된 프로그램을 사용자의 일정으로 등록합니다.
-        """
-        data = request.get_json()
-        if not data:
-            return {"error": "요청 본문이 없습니다."}, 400
+    success = save_schedule(
+        user_id, body.program_name, body.day1, body.day2, body.day3,
+        body.day4, body.day5, body.start_time, body.end_time
+    )
 
-        json_user_id = data.get("user_id")
-        program_name = data.get("program_name")
-        시작시간 = data.get("시작시간")
-        종료시간 = data.get("종료시간")
-
-        if not all([json_user_id, program_name, 시작시간, 종료시간]):
-            return {"error": "필수 항목이 누락되었습니다."}, 400
-        if int(json_user_id) != user_id:
-            return {"error": "URL의 user_id와 요청 본문의 user_id가 일치하지 않습니다."}, 400
-
-        success = save_schedule(user_id, program_name, data.get("요일1"), data.get("요일2"), data.get("요일3"),
-                                data.get("요일4"), data.get("요일5"), 시작시간, 종료시간)
-        if success:
-            return {"message": "일정이 저장되었습니다."}, 200
-        else:
-            return {"error": "일정 저장에 실패하였습니다."}, 500
+    if success:
+        return JSONResponse(
+            content={
+                "message": "일정이 저장되었습니다."
+            },
+            status_code=status.HTTP_200_OK
+        )
+    else:
+        return JSONResponse(
+            content={
+                "error": "일정 저장에 실패하였습니다."
+            },
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 def fetch_user_personality(user_id):
     """
@@ -227,15 +250,15 @@ def recommend_random_program(user_id):
     # 4. 무작위 추천
     chosen = random.choice(matched_list)
     message = (
-    f"✅ 추천 프로그램이 있습니다!\n\n"
-    f"📌 프로그램명: {chosen.get('프로그램명', '')}\n"
-    f"🏢 기관명: {chosen.get('기관명', '')}\n"
-    f"📍 주소: {chosen.get('주소', '')}\n"
-    f"📞 연락처: {chosen.get('tel', '')}\n"
-    f"🕒 시간: {chosen.get('시작시간', '')} ~ {chosen.get('종료시간', '')}\n"
-    f"💰 금액: {chosen.get('금액', '')}\n"
-    f"🧾 카테고리: {chosen.get('main_category', '')} / {chosen.get('sub_category', '')}\n"
-    f"👥 정원: {chosen.get('headcount', '')}\n"
-    f"🏷️ 태그: {chosen.get('tags', '')}"
-)
+        f"✅ 추천 프로그램이 있습니다!\n\n"
+        f"📌 프로그램명: {chosen.get('프로그램명', '')}\n"
+        f"🏢 기관명: {chosen.get('기관명', '')}\n"
+        f"📍 주소: {chosen.get('주소', '')}\n"
+        f"📞 연락처: {chosen.get('tel', '')}\n"
+        f"🕒 시간: {chosen.get('시작시간', '')} ~ {chosen.get('종료시간', '')}\n"
+        f"💰 금액: {chosen.get('금액', '')}\n"
+        f"🧾 카테고리: {chosen.get('main_category', '')} / {chosen.get('sub_category', '')}\n"
+        f"👥 정원: {chosen.get('headcount', '')}\n"
+        f"🏷️ 태그: {chosen.get('tags', '')}"
+    )
     return message
