@@ -1,44 +1,45 @@
-from flask import Blueprint, jsonify
+from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
 import pymysql
 import datetime
 
-from flask_restx import Namespace, Resource
-
 from utils.db_utils import get_capstone_db_connection
 
-# Swagger Namespace
-schedule_ns = Namespace("schedule_ns", description="schedule_route")
 
-@schedule_ns.route("/<user_id>")
-class ScheduleRoute(Resource):
-    @schedule_ns.doc(
-        description="""
-            일정 목록을 조회하는 API
-            (program_name, 요일1~요일5, 시작시간, 종료시간 등)
-        """
-    )
-    def get(self, user_id):
-        """
-        일정 목록을 조회하는 API
-        """
-        conn = get_capstone_db_connection()
-        try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                sql = """
-                    SELECT schedule_id, user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간, created_at
-                    FROM user_schedule
-                    WHERE user_id = %s
-                    ORDER BY created_at DESC
-                """
-                cursor.execute(sql, (user_id,))
-                rows = cursor.fetchall()
-                rows = [make_json_serializable(row) for row in rows]
-                return jsonify(rows), 200
-        except Exception as e:
-            print(f"[ERROR] 일정 조회 실패: {e}")
-            return jsonify({"error": "일정 조회 실패"}), 500
-        finally:
-            conn.close()
+schedule_router = APIRouter()
+
+@schedule_router.get("/{user_id}")
+def get_schedule(user_id):
+    """
+    일정 목록을 조회하는 API
+    """
+    conn = get_capstone_db_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            sql = """
+                SELECT schedule_id, user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간, created_at
+                FROM user_schedule
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+            """
+            cursor.execute(sql, (user_id,))
+            rows = cursor.fetchall()
+            rows = [make_json_serializable(row) for row in rows]
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content=rows
+            )
+    except Exception as e:
+        print(f"[ERROR] 일정 조회 실패: {e}")
+        return JSONResponse(
+            content= {
+                "error": "일정 조회 실패",
+                "message": str(e)
+            },
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    finally:
+        conn.close()
 
 
 def save_schedule(user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간):
@@ -109,6 +110,10 @@ def save_conversation_log(user_id, user_message, assistant_response, recommended
         conn.close()
 
 
+"""
+    추후 response_model 적용시 해당 함수 삭제 가능
+    현재 datetime 필드가 serialize 불가능
+"""
 def make_json_serializable(row):
     for key, value in row.items():
         if isinstance(value, (datetime.datetime, datetime.date, datetime.timedelta)):

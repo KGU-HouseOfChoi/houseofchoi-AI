@@ -1,5 +1,5 @@
-from fastapi import APIRouter
-from starlette.responses import JSONResponse
+from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
 
 from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
@@ -18,12 +18,12 @@ def test_db():
         conn.close()
         return JSONResponse(
             content={"message": "Database connection successful"},
-            status_code=200
+            status_code=status.HTTP_200_OK
         )
     except Exception as e:
         return JSONResponse(
             content={"message": "Database connection failed", "error": str(e)},
-            status_code=500
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 @test_router.post("/chatbot")
@@ -42,7 +42,7 @@ def chatbot_test():
                 "message": "GPT 응답 성공",
                 "response": response_text
             },
-            status_code=200
+            status_code=status.HTTP_200_OK
         )
     except Exception as e:
         # return {"message": "GPT 호출 실패", "error": str(e)}, 500
@@ -51,5 +51,5 @@ def chatbot_test():
                 "message": "GPT 호출 실패",
                 "error": str(e)
             },
-            status_code=500
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

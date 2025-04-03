@@ -3,13 +3,13 @@ from dotenv import load_dotenv
 
 # router module
 from routes.test_route import test_router
+from routes.schedule_route import schedule_router
 
 # from flask_cors import CORS
 # from flask import Flask
 
 # Blueprint 임포트
 # from routes.chat_route import chat_ns
-# from routes.schedule_route import schedule_ns
 # from routes.personality_route import personality_ns
 # from routes.recommend_routes import recommend_ns
 
