@@ -1,13 +1,13 @@
 services:
-  flask-app:
+  fastapi-app:
     build:
       context: .
       dockerfile: Dockerfile-local
-    container_name: flask_container
+    container_name: fastapi-app
     ports:
       - "5000:5000"
     environment:
-      - FLASK_ENV=local
+      - FASTAPI_ENV=local
     env_file:
       - .env.local
     networks:
