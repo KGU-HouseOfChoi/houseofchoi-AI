@@ -10,28 +10,9 @@ from pydantic import BaseModel
 
 from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
+from model.personality_model import AnalyzeResponse, AnalyzeRequest, MBTI
 
 personality_router = APIRouter()
-
-# BaseModel 정의
-class AnalyzeRequest(BaseModel):
-    user_id: str
-    answers: List[str]
-
-class AnalyzeResponse(BaseModel):
-    user_id: str
-    mbti: str
-    personality_tags: List[str]
-
-class MBTI(BaseModel):
-    user_id: str    # TODO : 추후 ERD 확인해서 바꾸기
-    ei: str
-    sn: str
-    tf: str
-    jp: str
-    mbti: str
-    personality_tags: List[str]
-    created_at: str
 
 # 1) 13문항 질문 (온보딩)
 QUESTIONS = [
