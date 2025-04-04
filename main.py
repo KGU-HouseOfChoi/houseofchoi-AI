@@ -16,7 +16,8 @@ load_dotenv()
 app = FastAPI(
     title="어르심 AI API",
     version="1.0.0",
-    description="어르심 서비스 AI 관련 API입니다."
+    description="어르심 서비스 AI 관련 API입니다.",
+    root_path="/ai"
 )
 
 @app.get("/")
