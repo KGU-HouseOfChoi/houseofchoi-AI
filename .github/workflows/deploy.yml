@@ -60,12 +60,13 @@ jobs:
           script: |
             cd ~/ai
             echo "${{ secrets.ENV_deploy }}" | base64 -d > .env.deploy
+            echo "${{ secrets.ENV_local }}" | base64 -d > .env.local
             docker-compose pull
             docker-compose down
             docker-compose up -d --force-recreate --remove-orphans
             docker image prune -f
 
-      - name: 서버에서 `docker-compose.yml` 파일 삭제
+      - name: 서버에서 `docker-compose.yml` 파일, env 파일 삭제
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST }}
@@ -74,3 +75,4 @@ jobs:
           script: |
             rm -f ~/ai/docker-compose.yml
             rm -f ~/ai/.env.deploy
+            rm -f ~/ai/.env.local
