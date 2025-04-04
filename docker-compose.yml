@@ -5,9 +5,9 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - FASTAPI_ENV=local
+      - FASTAPI_ENV=deploy
     env_file:
-      - .env.local
+      - .env.deploy
     networks:
       - backend_app-network
 
