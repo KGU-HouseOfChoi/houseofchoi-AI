@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
-from model.personality_model import AnalyzeResponse, AnalyzeRequest, MBTI
+from schemas.personality_model import AnalyzeResponse, AnalyzeRequest, MBTI
 
 personality_router = APIRouter()
 
