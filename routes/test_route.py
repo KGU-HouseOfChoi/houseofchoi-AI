@@ -3,6 +3,7 @@ from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from crud.schedule import create_schedule
 from model.schedule import Schedule
 from schemas.test_schema import ScheduleCreateRequest
 from utils.database import get_db
@@ -65,16 +66,11 @@ def chatbot_test():
 
 @test_router.post("/save/schedule")
 def create_schedule_for_test(request: ScheduleCreateRequest, db: Session = Depends(get_db)):
+    print("request:", request)
     user = get_user_by_id(db, request.user_id)
 
     program = get_program_by_id(db, request.program_id)
 
-    center = get_center_by_id(db, request.center_id)
-
-
-    schedule = Schedule(user=user, program=program, center=center)
-    db.add(schedule)
-    db.commit()
-    db.refresh(schedule)
+    schedule = create_schedule(db=db, user=user, program=program, center=program.center)
 
     return {"message": "Schedule created successfully", "schedule_id": schedule.id}
