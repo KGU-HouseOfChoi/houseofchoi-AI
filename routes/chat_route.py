@@ -12,7 +12,7 @@ from utils.chat_utils import (
     get_last_recommended_program
 )
 from routes.schedule_route import save_schedule, save_conversation_log
-from schemas.chatbot_model import ChatbotRequest, ScheduleResponse
+from schemas.chatbot_schema import ChatbotRequest, ScheduleResponse
 
 # API router
 chat_router = APIRouter()
