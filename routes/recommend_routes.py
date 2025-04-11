@@ -5,7 +5,7 @@ import pymysql
 from fastapi import APIRouter, status, HTTPException
 from fastapi.responses import JSONResponse
 
-from schemas.recommend_model import ScheduleRequest
+from schemas.recommend_schema import ScheduleRequest
 from utils.db_utils import get_capstone_db_connection
 from .schedule_route import save_schedule
 
