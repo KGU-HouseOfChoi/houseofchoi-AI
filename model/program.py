@@ -1,11 +1,13 @@
-# models/program.py
-
 from sqlalchemy import String, BigInteger, ForeignKey, Table, Time, Column, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING
+
 from model.base import BaseLongIdEntity
-from model.center import Center
-from model.schedule import Schedule
 from model.tag import Tag
+
+if TYPE_CHECKING:
+    from model.center import Center
+    from model.schedule import Schedule
 
 # 중간 테이블 정의
 program_tag = Table(
@@ -33,9 +35,9 @@ class Program(BaseLongIdEntity):
     headcount: Mapped[str] = mapped_column(String(100), nullable=False)
 
     center_id: Mapped[int] = mapped_column(ForeignKey("center.id"), nullable=False)
-    center: Mapped[Center] = relationship(back_populates="programs")
+    center: Mapped["Center"] = relationship("Center", back_populates="programs")
 
-    tags: Mapped[list[Tag]] = relationship(
+    tags: Mapped[list["Tag"]] = relationship(
         secondary=program_tag,
         back_populates="programs"
     )

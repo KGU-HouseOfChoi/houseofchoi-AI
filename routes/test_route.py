@@ -1,8 +1,17 @@
 from fastapi import APIRouter, status
+from fastapi.params import Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
+from model.schedule import Schedule
+from schemas.test_schema import ScheduleCreateRequest
+from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
+
+from crud.user import get_user_by_id
+from crud.program import get_program_by_id
+from crud.center import get_center_by_id
 
 test_router = APIRouter()
 
@@ -53,3 +62,19 @@ def chatbot_test():
             },
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@test_router.post("/save/schedule")
+def create_schedule_for_test(request: ScheduleCreateRequest, db: Session = Depends(get_db)):
+    user = get_user_by_id(db, request.user_id)
+
+    program = get_program_by_id(db, request.program_id)
+
+    center = get_center_by_id(db, request.center_id)
+
+
+    schedule = Schedule(user=user, program=program, center=center)
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+
+    return {"message": "Schedule created successfully", "schedule_id": schedule.id}

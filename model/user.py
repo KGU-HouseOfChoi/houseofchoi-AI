@@ -1,9 +1,12 @@
-from sqlalchemy import String, BigInteger, Enum
+from sqlalchemy import String, BigInteger, Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from enum import Enum as PyEnum
-from model.base import BaseLongIdEntity
-from model.schedule import Schedule
+from typing import TYPE_CHECKING
 
+from model.base import BaseLongIdEntity
+
+if TYPE_CHECKING:
+    from model.schedule import Schedule
 
 class Role(PyEnum):
     SENIOR = "부모"
@@ -16,7 +19,7 @@ class User(BaseLongIdEntity):
     phone: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
     birth: Mapped[str] = mapped_column(String(20), nullable=False)
     gender: Mapped[str] = mapped_column(String(10), nullable=False)
-    role: Mapped[Role | None] = mapped_column(Enum(Role, native_enum=False), nullable=True)
+    role: Mapped[Role | None] = mapped_column(SqlEnum(Role, native_enum=False), nullable=True)
     personality_tag: Mapped[str | None] = mapped_column("personality_tag", String(255))
     user_code: Mapped[str] = mapped_column("user_code", String(255), nullable=False, unique=True)
     related_user: Mapped[int | None] = mapped_column("related_user", BigInteger)
