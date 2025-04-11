@@ -1,8 +1,11 @@
-from sqlalchemy import String, Table, ForeignKey
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from model.base import BaseLongIdEntity
-from model.program import Program
+from typing import TYPE_CHECKING
 
+from model.base import BaseLongIdEntity
+
+if TYPE_CHECKING:
+    from model.program import Program
 
 class Tag(BaseLongIdEntity):
     __tablename__ = "tag"
