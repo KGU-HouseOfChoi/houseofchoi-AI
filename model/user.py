@@ -4,6 +4,7 @@ from enum import Enum as PyEnum
 from typing import TYPE_CHECKING
 
 from model.base import BaseLongIdEntity
+from model.personality import Personality
 
 if TYPE_CHECKING:
     from model.schedule import Schedule
@@ -23,5 +24,7 @@ class User(BaseLongIdEntity):
     personality_tag: Mapped[str | None] = mapped_column("personality_tag", String(255))
     user_code: Mapped[str] = mapped_column("user_code", String(255), nullable=False, unique=True)
     related_user: Mapped[int | None] = mapped_column("related_user", BigInteger)
+
+    personality: Mapped["Personality"] = relationship("Personality", back_populates="user", uselist=False)
 
     schedules: Mapped[list["Schedule"]] = relationship("Schedule", back_populates="user")
