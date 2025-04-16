@@ -1,5 +1,7 @@
+from datetime import datetime, timedelta
 from typing import Optional, List
 
+from sqlalchemy import select
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from model.chat_log import ChatLog
@@ -59,3 +61,16 @@ def get_last_recommended_program_by_user_id(user_id : str, db: Session) -> Optio
         .first()
 
     return last_program[0] if last_program else None
+
+def get_recent_user_messages(db: Session, user_id: int, days: int) -> List[ChatLog]:
+    time_threshold = datetime.now() - timedelta(days=days)
+
+    stmt = (
+        select(ChatLog)
+        .filter(ChatLog.user_id == user_id)
+        .filter(ChatLog.created_at >= time_threshold)
+        .order_by(ChatLog.created_at.desc())
+    )
+
+    result = db.scalars(stmt).all()
+    return result

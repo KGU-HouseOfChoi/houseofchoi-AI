@@ -6,28 +6,28 @@ from fastapi import APIRouter, status, HTTPException
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from typing import List
 
 from crud.personality import get_latest_personality_by_user_id
 from crud.program import get_program_by_id, get_all_programs
 from crud.schedule import create_schedule
 from crud.user import get_user_by_id
 from model.program import Program
+from schemas.program_schema import ProgramSchema
 from schemas.recommend_schema import ScheduleRequest
 from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection
-from .schedule_route import save_schedule
 
 recommend_router = APIRouter()
 
-@recommend_router.get("/{user_id}")
+@recommend_router.get("/{user_id}", response_model=List[ProgramSchema])
 def get_recommend_programs(user_id: int, db: Session=Depends(get_db)):
     """
     사용자 성향을 기반으로 추천 프로그램 목록을 반환합니다.
     """
     personality = get_latest_personality_by_user_id(db, user_id)
     tags = str(personality.tag)
-
-    user_tags = [tags.strip() for tag in tags.split(",") if tag.strip()]
+    user_tags = tags.split(",")
 
     programs = get_all_programs(db)
 
@@ -47,13 +47,7 @@ def get_recommend_programs(user_id: int, db: Session=Depends(get_db)):
         )
 
 
-    return JSONResponse(
-        content={
-            "user_id" : user_id,
-            "matched_programs": matched_list
-        },
-        status_code=status.HTTP_200_OK
-    )
+    return matched_list
 
 @recommend_router.post("/{user_id}")
 def save_program(user_id : int, body: ScheduleRequest, db: Session=Depends(get_db)):
@@ -177,21 +171,19 @@ def recommend_random_program(user_id : int, db: Session=Depends(get_db)):
     """
     # 1. 사용자 태그 가져오기
     personality = get_latest_personality_by_user_id(db, user_id)
-    user_tags = [tag.strip() for tag in str(personality.tag).split(",") if tag.strip()]
+    tags = str(personality.tag)
+    user_tags = tags.split(",")
 
-    # 2. 모든 프로그램 정보 가져오기
+    # 2. 프로그램 정보 가져오기
     programs = get_all_programs(db)
-
-    # 3. 사용자 태그와 비교하여 교집합이 2개 이상이면 추천 후보에 추가
+    
+    # 3. 프로그램 태그 매칭하기
     matched_list = []
     for program in programs:
         program_tag_names = [tag.name for tag in program.tags]
         overlap = set(user_tags) & set(program_tag_names)
         if len(overlap) >= 2:
             matched_list.append(program)
-
-    if not matched_list:
-        return "사용자 성향에 맞는 프로그램이 없습니다."
 
     # 4. 무작위 추천
     chosen = Program(random.choice(matched_list))
