@@ -1,45 +1,29 @@
 from fastapi import APIRouter, status
+from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 import pymysql
 import datetime
 
+from typing import List
+
+from sqlalchemy.orm import Session
+
+from crud.schedule import get_all_schedules_by_id
+from schemas.schedule_schema import ScheduleResponseSchema
+from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection
 
 
 schedule_router = APIRouter()
 
-@schedule_router.get("/{user_id}")
-def get_schedule(user_id):
+@schedule_router.get("/{user_id}", response_model=List[ScheduleResponseSchema])
+def get_schedule(user_id: int, db: Session = Depends(get_db)):
     """
     일정 목록을 조회하는 API
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT schedule_id, user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간, created_at
-                FROM user_schedule
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-            """
-            cursor.execute(sql, (user_id,))
-            rows = cursor.fetchall()
-            rows = [make_json_serializable(row) for row in rows]
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content=rows
-            )
-    except Exception as e:
-        print(f"[ERROR] 일정 조회 실패: {e}")
-        return JSONResponse(
-            content= {
-                "error": "일정 조회 실패",
-                "message": str(e)
-            },
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-    finally:
-        conn.close()
+    schedules = get_all_schedules_by_id(db, user_id)
+
+    return schedules
 
 
 def save_schedule(user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간):

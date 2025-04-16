@@ -1,15 +1,17 @@
-import pymysql
+from typing import List
+
 from fastapi import APIRouter, HTTPException
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log, create_chat_log_with_program
+from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log, create_chat_log_with_program, \
+    get_chat_log_by_id
 from crud.program import get_program_by_name
 from crud.schedule import create_schedule
 from crud.user import get_user_by_id
+from schemas.chatlog_schema import ChatLogResponse
 from utils.database import get_db
-from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
 from utils.chat_utils import (
     recommend_random_program,
@@ -177,25 +179,10 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
     # crud 모듈 등록 완료
 
 
-@chat_router.get("/log/{user_id}")
-def get_log(user_id: int):
+@chat_router.get("/log/{user_id}", response_model=List[ChatLogResponse])
+def get_log(user_id: str, db :Session=Depends(get_db)):
     """
     특정 user_id의 대화 기록 조회
     GET /chat/log/{user_id}
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT id, user_id, user_message, assistant_response, timestamp
-                FROM user_conversation_log
-                WHERE user_id = %s
-                ORDER BY timestamp DESC
-            """
-            cursor.execute(sql, (user_id,))
-            rows = cursor.fetchall()
-            return JSONResponse(content=rows, status_code=200)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"대화 로그 조회 실패: {e}")
-    finally:
-        conn.close()
+    return get_chat_log_by_id(db, user_id)

@@ -1,4 +1,6 @@
-from typing import Optional
+from typing import Optional, List
+
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from model.chat_log import ChatLog
 
@@ -32,6 +34,17 @@ def create_chat_log_with_program(
     db.commit()
     db.refresh(chat_log)
     return chat_log
+
+def get_chat_log_by_id(db: Session, user_id: str) -> List[ChatLog]:
+    results = db.query(ChatLog).filter(ChatLog.user_id == user_id).all()
+
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail="등록된 일정이 없습니다."
+        )
+
+    return results
 
 def get_last_recommended_program_by_user_id(user_id : str, db: Session) -> Optional[str]:
     """

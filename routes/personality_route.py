@@ -2,12 +2,12 @@ import json
 import pymysql
 
 # FastAPI
-from typing import List
-from fastapi import APIRouter, status, HTTPException
-from fastapi.params import Query
+from fastapi import APIRouter, status
+from fastapi.params import Query, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
+from crud.personality import *
+from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
 from schemas.personality_schema import AnalyzeResponse, AnalyzeRequest, MBTI
@@ -53,7 +53,7 @@ def get_questions():
     )
 
 @personality_router.post("/analyze", response_model=AnalyzeResponse)
-def post(body: AnalyzeRequest):
+def post(body: AnalyzeRequest, db:Session=Depends(get_db)):
     """
     사용자의 답변을 분석하여 MBTI 유형 및 추가 성격 태그를 반환하는 API
 
@@ -93,21 +93,8 @@ def post(body: AnalyzeRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            tags_str = ",".join(all_tags)
-            sql = """
-            INSERT INTO user_personality (user_id, ei, sn, tf, jp, personality_tags)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """
-            ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
-            cursor.execute(sql, (user_id, ei, sn, tf, jp, tags_str))
-            conn.commit()
-    except Exception as ex:
-        return HTTPException(status_code=500, detail=f"DB 저장 오류: {str(ex)}")
-    finally:
-        conn.close()
+    ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
+    create_personality(db, int(user_id), ei, sn, tf, jp, all_tags)
 
     return AnalyzeResponse(
         user_id=user_id,
@@ -116,11 +103,12 @@ def post(body: AnalyzeRequest):
     )
 
 @personality_router.get("/analysis/{user_id}", response_model=MBTI)
-def get_user_mbti(user_id: int):
+def get_user_mbti(user_id: int, db:Session=Depends(get_db)):
     """
     사용자의 MBTI 유형 및 추가 성격 태그를 반환합니다.
 
     :param user_id:
+    :param db:
     :return:
     ```json
     {
@@ -135,44 +123,19 @@ def get_user_mbti(user_id: int):
     }
     ```
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT user_id, ei, sn, tf, jp, personality_tags, created_at
-                FROM user_personality
-                WHERE user_id = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql, (user_id,))
-            row = cursor.fetchone()
-    except Exception as ex:
-        return HTTPException(
-            status_code=500,
-            detail=f"DB 조회 오류: {str(ex)}"
-        )
-    finally:
-        conn.close()
 
-    if not row:
-        return HTTPException(
-            status_code=404,
-            detail=f"user_id {user_id} 데이터가 없습니다."
-        )
-
-    mbti_str = f"{row['ei']}{row['sn']}{row['tf']}{row['jp']}"
-    tags_list = row["personality_tags"].split(',') if row["personality_tags"] else []
+    personality = get_latest_personality_by_user_id(db, user_id)
+    mbti_str = f"{personality.ei}{personality.sn}{personality.tf}{personality.pj}"
+    tags_list = str(personality.tag).split(',') if personality.tag else []
 
     return MBTI(
-        user_id=user_id,
-        ei=row['ei'],
-        sn=row['sn'],
-        tf=row['tf'],
-        jp=row['jp'],
-        mbti_str=mbti_str,
-        tags_list=tags_list,
-        created_at=str(row['created_at']),
+        user_id=str(personality.user_id),
+        ei=str(personality.ei),
+        sn=str(personality.sn),
+        tf=str(personality.tf),
+        jp=str(personality.pj),
+        mbti=mbti_str,
+        personality_tags=tags_list,
     )
 
 @personality_router.post("/analysis/{user_id}")
