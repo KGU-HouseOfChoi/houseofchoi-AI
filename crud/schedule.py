@@ -1,5 +1,8 @@
+from typing import List
+
 from fastapi import HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
+
 from model.schedule import Schedule
 from model.user import User
 from model.program import Program
@@ -19,17 +22,10 @@ def create_schedule(
     db.refresh(schedule)
     return schedule
 
-
-def get_schedules_by_user_id(db: Session, user_id: int) -> list[ScheduleResponseSchema]:
-    schedules = (
-        db.query(Schedule)
-        .options(joinedload(Schedule.program), joinedload(Schedule.center))
-        .filter(Schedule.user_id == user_id)
-        .order_by(Schedule.created_at.desc())
-        .all()
-    )
+def get_all_schedules_by_id(db: Session, user_id: int) -> List[Schedule]:
+    schedules = db.query(Schedule).filter_by(user_id=user_id).all()
 
     if not schedules:
-        raise HTTPException(status_code=404, detail="등록된 스케줄 정보를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="등록된 스케줄이 없습니다.")
 
-    return [ScheduleResponseSchema.from_orm(schedule) for schedule in schedules]
+    return schedules

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 from typing import List
 
@@ -11,11 +13,10 @@ class AnalyzeResponse(BaseModel):
     personality_tags: List[str]
 
 class MBTI(BaseModel):
-    user_id: str    # TODO : 추후 ERD 확인해서 바꾸기
+    user_id: str
     ei: str
     sn: str
     tf: str
     jp: str
-    mbti_str: str | None = None
-    tags_list: list[str] | None = None
-    created_at: str
+    mbti: str
+    personality_tags: List[str]

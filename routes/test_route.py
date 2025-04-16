@@ -2,34 +2,33 @@ from fastapi import APIRouter, status
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from crud.schedule import create_schedule
-from model.schedule import Schedule
 from schemas.test_schema import ScheduleCreateRequest
 from utils.database import get_db
-from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
 
 from crud.user import get_user_by_id
 from crud.program import get_program_by_id
-from crud.center import get_center_by_id
 
 test_router = APIRouter()
 
 @test_router.get("/db")
-def test_db():
+def test_db(db: Session = Depends(get_db)):
     """
         DB 연결을 확인하는 API입니다.
     """
     try:
-        conn = get_capstone_db_connection()
-        with conn.cursor() as cursor:
-            cursor.execute('SELECT 1')
-        conn.close()
-        return JSONResponse(
-            content={"message": "Database connection successful"},
-            status_code=status.HTTP_200_OK
-        )
+        # DB에서 단순 쿼리 실행하여 연결 확인
+        result = db.execute(text('SELECT 1'))
+        if result.scalar() == 1:
+            return JSONResponse(
+                content={"message": "Database connection successful"},
+                status_code=status.HTTP_200_OK
+            )
+        else:
+            raise Exception("Failed to execute test query")
     except Exception as e:
         return JSONResponse(
             content={"message": "Database connection failed", "error": str(e)},

@@ -1,17 +1,13 @@
 import json
-import pymysql
 
 # FastAPI
-from typing import List
-from fastapi import APIRouter, status, HTTPException
+from fastapi import APIRouter, status
 from fastapi.params import Query, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
-from crud.personality import get_latest_personality_by_user_id, create_personality
+from crud.chat_log import get_recent_user_messages
+from crud.personality import *
 from utils.database import get_db
-from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
 from schemas.personality_schema import AnalyzeResponse, AnalyzeRequest, MBTI
 
@@ -56,7 +52,8 @@ def get_questions():
     )
 
 @personality_router.post("/analyze", response_model=AnalyzeResponse)
-def post(body: AnalyzeRequest, db: Session=Depends(get_db)):
+
+def post(body: AnalyzeRequest, db:Session=Depends(get_db)):
     """
     사용자의 답변을 분석하여 MBTI 유형 및 추가 성격 태그를 반환하는 API
 
@@ -106,8 +103,10 @@ def post(body: AnalyzeRequest, db: Session=Depends(get_db)):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"DB 저장 오류: {str(ex)}")
+
+    ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
+    create_personality(db, int(user_id), ei, sn, tf, jp, all_tags)
+
 
     return AnalyzeResponse(
         user_id=body.user_id,
@@ -116,12 +115,13 @@ def post(body: AnalyzeRequest, db: Session=Depends(get_db)):
     )
 
 @personality_router.get("/analysis/{user_id}", response_model=MBTI)
-def get_user_mbti(user_id: int, db: Session = Depends(get_db)):
+def get_user_mbti(user_id: int, db:Session=Depends(get_db)):
     """
     사용자의 MBTI 유형 및 추가 성격 태그를 반환합니다.
 
-    :param user_id: 유저 고유 아이디 Long
-    :param db: SQLAlchemy 세션 (자동 주입)
+    :param user_id:
+    :param db:
+
     :return:
     ```json
     {
@@ -137,28 +137,24 @@ def get_user_mbti(user_id: int, db: Session = Depends(get_db)):
     ```
     """
     personality = get_latest_personality_by_user_id(db, user_id)
-
-    if not personality:
-        raise HTTPException(
-            status_code=404,
-            detail=f"user_id {user_id} 데이터가 없습니다."
-        )
+    mbti_str = f"{personality.ei}{personality.sn}{personality.tf}{personality.pj}"
+    tags_list = str(personality.tag).split(',') if personality.tag else []
 
     return MBTI(
-        user_id=str(user_id),
-        ei=personality.ei,
-        sn=personality.sn,
-        tf=personality.tf,
-        jp=personality.pj,
-        mbti_str=f"{personality.ei}{personality.sn}{personality.tf}{personality.pj}",
-        tags_list=personality.tag.split(',') if personality.tag else [],
-        created_at=str(personality.created_at),
+        user_id=str(personality.user_id),
+        ei=str(personality.ei),
+        sn=str(personality.sn),
+        tf=str(personality.tf),
+        jp=str(personality.pj),
+        mbti=mbti_str,
+        personality_tags=tags_list,
     )
 
 @personality_router.post("/analysis/{user_id}")
 def post(
         user_id: int,
-        days: int = Query(30, description="최근 N일간의 데이터를 분석 (기본값: 30일)")
+        days: int = Query(30, description="최근 N일간의 데이터를 분석 (기본값: 30일)"),
+        db:Session=Depends(get_db),
 ):
     """
     최근 30일의 대화내용을 바탕으로 사용자의 성향을 재분석합니다.
@@ -176,108 +172,84 @@ def post(
     }
     ```
     """
-    conn = get_capstone_db_connection()
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql_logs = """
-                SELECT user_message
-                FROM user_conversation_log
-                WHERE user_id = %s
-                  AND timestamp >= NOW() - INTERVAL %s DAY
-                ORDER BY timestamp DESC
-            """
-            cursor.execute(sql_logs, (user_id, days))
-            logs = cursor.fetchall()
-            if not logs:
-                return HTTPException(
-                    status_code=404,
-                    detail=f"{days}일간 대화 기록이 없어 분석 불가"
-                )
-            conversation_text = "\n".join([row["user_message"] for row in logs])
-
-            system_prompt = (
-                "당신은 노인 복지센터 AI 분석가입니다. 최근 대화를 바탕으로 사용자의 성향 변화 여부를 분석하세요. "
-                "아래 JSON 형식으로 결과를 출력하세요. 각 항목은 변경된 경우 새 값을, 변화가 없으면 'NO_CHANGE'로 출력하세요.\n"
-                "{\n"
-                '  "ei": "NEW_E" 또는 "NEW_I" 또는 "NO_CHANGE",\n'
-                '  "sn": "NEW_S" 또는 "NEW_N" 또는 "NO_CHANGE",\n'
-                '  "tf": "NEW_T" 또는 "NEW_F" 또는 "NO_CHANGE",\n'
-                '  "jp": "NEW_J" 또는 "NEW_P" 또는 "NO_CHANGE"\n'
-                "}\n"
-                "예를 들어, 만약 대화에서 내향적 성향이 강화되면 {\"ei\": \"NEW_I\", \"sn\": \"NO_CHANGE\", \"tf\": \"NO_CHANGE\", \"jp\": \"NO_CHANGE\"}와 같이 응답하세요."
+        logs = get_recent_user_messages(db, user_id, days)
+        if not logs:
+            return HTTPException(
+                status_code=404,
+                detail=f"{days}일간 대화 기록이 없어 분석 불가"
             )
-            user_prompt = f"최근 {days}일간 사용자 대화:\n{conversation_text}"
+        conversation_text = "\n".join([log.user_message for log in logs])
 
-            gpt_result = gpt_call(system_prompt, user_prompt)
-            print("[DEBUG] GPT 분석 결과:", gpt_result)
+        system_prompt = (
+            "당신은 노인 복지센터 AI 분석가입니다. 최근 대화를 바탕으로 사용자의 성향 변화 여부를 분석하세요. "
+            "아래 JSON 형식으로 결과를 출력하세요. 각 항목은 변경된 경우 새 값을, 변화가 없으면 'NO_CHANGE'로 출력하세요.\n"
+            "{\n"
+            '  "ei": "NEW_E" 또는 "NEW_I" 또는 "NO_CHANGE",\n'
+            '  "sn": "NEW_S" 또는 "NEW_N" 또는 "NO_CHANGE",\n'
+            '  "tf": "NEW_T" 또는 "NEW_F" 또는 "NO_CHANGE",\n'
+            '  "jp": "NEW_J" 또는 "NEW_P" 또는 "NO_CHANGE"\n'
+            "}\n"
+            "예를 들어, 만약 대화에서 내향적 성향이 강화되면 {\"ei\": \"NEW_I\", \"sn\": \"NO_CHANGE\", \"tf\": \"NO_CHANGE\", \"jp\": \"NO_CHANGE\"}와 같이 응답하세요."
+        )
+        user_prompt = f"최근 {days}일간 사용자 대화:\n{conversation_text}"
 
-            try:
-                changes = json.loads(gpt_result)
-            except Exception as e:
-                return HTTPException(
-                    status_code=500,
-                    detail=f"GPT 결과 JSON 파싱 실패\n오류 내용{str(e)}"
-                )
+        gpt_result = gpt_call(system_prompt, user_prompt)
+        print("[DEBUG] GPT 분석 결과:", gpt_result)
 
-            # 현재 DB에 저장된 성향 조회
-            sql_current = """
-                SELECT ei, sn, tf, jp
-                FROM user_personality
-                WHERE user_id = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql_current, (user_id,))
-            current_row = cursor.fetchone()
-            if not current_row:
-                return HTTPException(
-                    status_code=404,
-                    detail=f"{user_id} 사용자의 기존 성향 데이터가 없습니다."
-                )
+        try:
+            changes = json.loads(gpt_result)
+        except Exception as e:
+            return HTTPException(
+                status_code=500,
+                detail=f"GPT 결과 JSON 파싱 실패\n오류 내용{str(e)}"
+            )
 
-            # 각 성향 업데이트 결정 (NEW_ 접두사가 있으면 새 값, NO_CHANGE면 현재 값 유지)
-            def get_updated(current, change):
-                if change.startswith("NEW_"):
-                    return change[-1]  # 마지막 문자(E, I, S, N, T, F, J, P)
-                return current
+        # 현재 DB에 저장된 성향 조회
+        current_row = get_latest_personality_by_user_id(db, user_id)
+        if not current_row:
+            return HTTPException(
+                status_code=404,
+                detail=f"{user_id} 사용자의 기존 성향 데이터가 없습니다."
+            )
 
-            updated_ei = get_updated(current_row["ei"], changes.get("ei", "NO_CHANGE"))
-            updated_sn = get_updated(current_row["sn"], changes.get("sn", "NO_CHANGE"))
-            updated_tf = get_updated(current_row["tf"], changes.get("tf", "NO_CHANGE"))
-            updated_jp = get_updated(current_row["jp"], changes.get("jp", "NO_CHANGE"))
+        # 각 성향 업데이트 결정 (NEW_ 접두사가 있으면 새 값, NO_CHANGE면 현재 값 유지)
+        def get_updated(current, change):
+            if change.startswith("NEW_"):
+                return change[-1]  # 마지막 문자(E, I, S, N, T, F, J, P)
+            return current
 
-            # 만약 아무 것도 변경되지 않았다면
-            if (updated_ei == current_row["ei"] and updated_sn == current_row["sn"] and
-                updated_tf == current_row["tf"] and updated_jp == current_row["jp"]):
-                return JSONResponse(
-                    status_code=status.HTTP_200_OK,
-                    content={
-                        "message": "성향 변화 없음"
-                    }
-                )
+        updated_ei = get_updated(current_row.ei, changes.get("ei", "NO_CHANGE"))
+        updated_sn = get_updated(current_row.sn, changes.get("sn", "NO_CHANGE"))
+        updated_tf = get_updated(current_row.tf, changes.get("tf", "NO_CHANGE"))
+        updated_jp = get_updated(current_row.pj, changes.get("jp", "NO_CHANGE"))
 
-            # 새 MBTI 문자열 생성
-            new_mbti = f"{updated_ei}{updated_sn}{updated_tf}{updated_jp}"
-            # 업데이트된 태그 재계산 (analyze_mbti_tags 함수 사용; 해당 함수는 아래에 정의됨)
-            new_tags = analyze_mbti_tags(new_mbti)
-            tags_str = ",".join(new_tags)
-
-            sql_update = """
-                UPDATE user_personality
-                SET ei=%s, sn=%s, tf=%s, jp=%s, personality_tags=%s
-                WHERE user_id=%s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql_update, (updated_ei, updated_sn, updated_tf, updated_jp, tags_str, user_id))
-            conn.commit()
-
+        # 만약 아무 것도 변경되지 않았다면
+        if (updated_ei == current_row.ei and updated_sn == current_row.sn and
+            updated_tf == current_row.tf and updated_jp == current_row.pj):
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
                 content={
-                    "message": f"성향 업데이트 완료. 새 MBTI: {new_mbti}, 태그: {tags_str}"
+                    "message": "성향 변화 없음"
                 }
             )
+
+        # 새 MBTI 문자열 생성
+        new_mbti = f"{updated_ei}{updated_sn}{updated_tf}{updated_jp}"
+        # 업데이트된 태그 재계산 (analyze_mbti_tags 함수 사용; 해당 함수는 아래에 정의됨)
+        new_tags = analyze_mbti_tags(new_mbti)
+        tags_str = ",".join(new_tags)
+
+        latest_personality = update_latest_personality_by_user_id(
+            db, user_id, updated_ei, updated_sn, updated_tf, updated_jp, tags_str
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "message": f"성향 업데이트 완료. 새 MBTI: {new_mbti}, 태그: {tags_str}"
+            }
+        )
     except Exception as e:
         print(f"[ERROR] 분석 실패: {e}")
         return HTTPException(
@@ -285,7 +257,7 @@ def post(
             detail="분석 중 오류 발생"
         )
     finally:
-        conn.close()
+        pass
 
 # ---------------------------
 # 아래는 MBTI/온보딩 분석 로직 함수들

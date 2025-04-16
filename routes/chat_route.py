@@ -1,24 +1,30 @@
-import pymysql
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from typing import List
 
-from utils.db_utils import get_capstone_db_connection
+from fastapi import APIRouter, HTTPException
+from fastapi.params import Depends
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+
+from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log, create_chat_log_with_program, \
+    get_chat_log_by_id
+from crud.program import get_program_by_name
+from crud.schedule import create_schedule
+from crud.user import get_user_by_id
+from schemas.chatlog_schema import ChatLogResponse
+from utils.database import get_db
 from utils.gpt_utils import gpt_call
 from utils.chat_utils import (
     recommend_random_program,
     search_program_and_build_message,
     extract_requested_program,
-    get_last_recommended_program
 )
-from routes.schedule_route import save_schedule, save_conversation_log
-from schemas.chatbot_schema import ChatbotRequest, ScheduleResponse
+from schemas.chatbot_schema import ChatbotRequest
 
 # API router
 chat_router = APIRouter()
 
 @chat_router.post("")
-def post(body: ChatbotRequest):
+def post(body: ChatbotRequest, db: Session=Depends(get_db)):
     """
         챗봇 관련 메인 API
         - `user_id`: 사용자의 고유 ID
@@ -35,59 +41,39 @@ def post(body: ChatbotRequest):
     # (A) "예", "등록" 등으로 일정 등록 의사 표시
     if user_message.lower() in ["예", "네", "등록", "등록할래요"]:
         # 1) 최근 recommended_program 찾기 (프로그램명)
-        recommended_program = get_last_recommended_program(user_id)
+        recommended_program = get_last_recommended_program_by_user_id(user_id, db)
         if not recommended_program:
-            # return jsonify({"error": "최근에 추천된 프로그램이 없습니다."}), 400
             raise HTTPException(
                 status_code=400,
                 detail="최근에 추천된 프로그램이 없습니다."
             )
 
         # 2) DB에서 해당 프로그램의 추가 정보를 조회 (요일1~요일5, 시작시간, 종료시간)
-        conn = get_capstone_db_connection()
-        try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                sql = """
-                        SELECT 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간
-                        FROM elderly_programs
-                        WHERE 프로그램명 = %s
-                        LIMIT 1
-                    """
-                cursor.execute(sql, (recommended_program,))
-                program_info = cursor.fetchone()
-        finally:
-            conn.close()
+        print(recommended_program)
+        program = get_program_by_name(db, recommended_program)
+        user = get_user_by_id(db, int(user_id))
 
-        if not program_info:
-            # return jsonify({"error": "추천된 프로그램의 상세 정보를 찾을 수 없습니다."}), 400
-            raise HTTPException(
-                status_code=400,
-                detail="추천된 프로그램의 상세 정보를 찾을 수 없습니다."
-            )
         # 3) schedule_route.py의 save_schedule 함수는 새 스키마에 맞춰 9개의 인자를 받으므로 호출
-        success = save_schedule(
-            user_id,
-            recommended_program,
-            program_info.get("요일1"),
-            program_info.get("요일2"),
-            program_info.get("요일3"),
-            program_info.get("요일4"),
-            program_info.get("요일5"),
-            program_info.get("시작시간"),
-            program_info.get("종료시간")
+        schedule = create_schedule(
+            db,
+            user,
+            program,
+            program.center
         )
-        if success:
+
+        if schedule:
             response_text = f"✅ '{recommended_program}' 일정이 등록되었습니다!"
-            save_conversation_log(user_id, user_message, response_text)
+            create_chat_log(db, user_id, user_message, response_text)
             return JSONResponse(
                 status_code=200,
-                content=ScheduleResponse
+                content="일정 등록 성공"
             )
         else:
             raise HTTPException(
                 status_code=500,
                 detail="일정 등록 실패"
             )
+        # crud 모듈 분리 완료
 
     # (B) 사용자 메시지에서 프로그램명 추출
     requested_program = extract_requested_program(user_message)
@@ -118,17 +104,22 @@ def post(body: ChatbotRequest):
             assistant_answer = gpt_call(system_prompt, user_message)
             response["assistant_answer"] = assistant_answer
             chatbot_response = assistant_answer
-            save_conversation_log(user_id, user_message, chatbot_response)
+            chat_log = create_chat_log(db, user_id, user_message, chatbot_response)
             return JSONResponse(
                 status_code=200,
-                content=response
+                content={
+                    "user_id": chat_log.user_id,
+                    "user_message": chat_log.user_message,
+                    "chatbot_response": chat_log.assistant_response
+                }
             )
+        # crud 모듈로 분리 완료
 
     # (C) 프로그램 추천 관련 처리
     if requested_program is None:
         # (C-1) 프로그램명이 언급되지 않았다면 => 무작위 추천
         # recommend_random_program 함수는 (안내문, 추천된 프로그램명) 두 값을 반환하도록 합니다.
-        raw_msg, found_program_name = recommend_random_program(user_id)
+        raw_msg, found_program_name = recommend_random_program(int(user_id), db)
 
         system_prompt = (
             "당신은 노인 복지 센터의 비서입니다. 아래 문장을 간단히 다듬어 주세요. "
@@ -140,7 +131,7 @@ def post(body: ChatbotRequest):
         chatbot_response = recommendation
 
         # 무작위 추천한 프로그램명을 대화 로그에 기록 (found_program_name가 바로 저장됨)
-        save_conversation_log(user_id, user_message, chatbot_response, recommended_program=found_program_name)
+        create_chat_log_with_program(db, user_id, user_message, chatbot_response, recommended_program=found_program_name)
         return JSONResponse(
             status_code=200,
             content=response
@@ -149,7 +140,7 @@ def post(body: ChatbotRequest):
     else:
         # (C-2) 프로그램명이 언급되었다면 => DB 검색 또는 안내 메시지
         # search_program_and_build_message 함수는 (안내문, 추천된 프로그램명) 두 값을 반환하도록 합니다.
-        raw_msg, found_program_name = search_program_and_build_message(requested_program)
+        raw_msg, found_program_name = search_program_and_build_message(db, requested_program)
 
         # 강제 문자열 변환: 혹시 raw_msg가 예상치 못한 타입일 경우를 대비
         if not isinstance(raw_msg, str):
@@ -167,7 +158,7 @@ def post(body: ChatbotRequest):
             response["recommended_program"] = found_program_name
 
             # 특정 프로그램명 언급 시에도 추천된 프로그램명을 대화 로그에 기록
-            save_conversation_log(user_id, user_message, chatbot_response, recommended_program=found_program_name)
+            create_chat_log_with_program(db, user_id, user_message, chatbot_response, recommended_program=found_program_name)
 
         else:
             system_prompt = (
@@ -178,33 +169,19 @@ def post(body: ChatbotRequest):
             response["assistant_answer"] = assistant_answer
             chatbot_response = assistant_answer
             # 이 경우 추천된 프로그램명이 없으므로 로그에 저장할 때 생략
-            save_conversation_log(user_id, user_message, chatbot_response)
+            create_chat_log(db, user_id, user_message, chatbot_response)
 
         return JSONResponse(
                 status_code=200,
                 content=response
             )
+    # crud 모듈 등록 완료
 
 
-@chat_router.get("/log/{user_id}")
-def get_log(user_id: int):
+@chat_router.get("/log/{user_id}", response_model=List[ChatLogResponse])
+def get_log(user_id: str, db :Session=Depends(get_db)):
     """
     특정 user_id의 대화 기록 조회
     GET /chat/log/{user_id}
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT id, user_id, user_message, assistant_response, timestamp
-                FROM user_conversation_log
-                WHERE user_id = %s
-                ORDER BY timestamp DESC
-            """
-            cursor.execute(sql, (user_id,))
-            rows = cursor.fetchall()
-            return JSONResponse(content=rows, status_code=200)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"대화 로그 조회 실패: {e}")
-    finally:
-        conn.close()
+    return get_chat_log_by_id(db, user_id)

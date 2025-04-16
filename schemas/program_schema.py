@@ -1,6 +1,13 @@
 from pydantic import BaseModel
 from datetime import time
 
+
+class TagSchema(BaseModel):
+    name: str
+
+    class Config:
+        from_attributes = True
+
 class ProgramSchema(BaseModel):
     id: int
     name: str
@@ -15,6 +22,7 @@ class ProgramSchema(BaseModel):
     main_category: str
     sub_category: str
     headcount: str
+    tags: list[TagSchema] | None
 
     class Config:
         from_attributes = True
