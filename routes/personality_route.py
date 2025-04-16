@@ -52,6 +52,7 @@ def get_questions():
     )
 
 @personality_router.post("/analyze", response_model=AnalyzeResponse)
+
 def post(body: AnalyzeRequest, db:Session=Depends(get_db)):
     """
     사용자의 답변을 분석하여 MBTI 유형 및 추가 성격 태그를 반환하는 API
@@ -88,15 +89,27 @@ def post(body: AnalyzeRequest, db:Session=Depends(get_db)):
         raise HTTPException(status_code=400, detail="정확히 13개의 A/B 답변이 필요합니다.")
 
     try:
-        mbti_str, all_tags = analyze_13_answers(answers_13)
+        mbti_str, all_tags = analyze_13_answers(body.answers)
+        ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
+
+        create_personality(
+            db=db,
+            user_id=int(body.user_id),
+            ei=ei,
+            sn=sn,
+            tf=tf,
+            jp=jp,
+            personality_tags=all_tags
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
     create_personality(db, int(user_id), ei, sn, tf, jp, all_tags)
 
+
     return AnalyzeResponse(
-        user_id=user_id,
+        user_id=body.user_id,
         mbti=mbti_str,
         personality_tags=all_tags
     )
@@ -108,6 +121,7 @@ def get_user_mbti(user_id: int, db:Session=Depends(get_db)):
 
     :param user_id:
     :param db:
+
     :return:
     ```json
     {
@@ -122,7 +136,6 @@ def get_user_mbti(user_id: int, db:Session=Depends(get_db)):
     }
     ```
     """
-
     personality = get_latest_personality_by_user_id(db, user_id)
     mbti_str = f"{personality.ei}{personality.sn}{personality.tf}{personality.pj}"
     tags_list = str(personality.tag).split(',') if personality.tag else []

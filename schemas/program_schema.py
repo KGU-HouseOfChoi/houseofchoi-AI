@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from datetime import time
 
+
 class TagSchema(BaseModel):
     name: str
 
