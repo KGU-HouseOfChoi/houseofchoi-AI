@@ -1,5 +1,10 @@
 import random
 import pymysql
+from sqlalchemy.orm import Session
+
+from crud.chat_log import get_last_recommended_program_by_user_id
+from crud.program import get_program_by_keyword
+from model.program import Program
 from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
 
@@ -70,7 +75,7 @@ def get_course_personality(course_name):
         conn.close()
 
 
-def build_program_message(course_dict):
+def build_program_message(course_dict: Program):
     """
     elderly_programs 테이블 한 행(course_dict)에 대해,
     사용자에게 안내할 메시지(문자열)를 만들어 반환.
@@ -78,19 +83,19 @@ def build_program_message(course_dict):
     """
     message = (
         f"✅ 추천 프로그램이 있습니다!\n\n"
-        f"프로그램명: {course_dict.get('프로그램명', '')}\n"
-        f"기관명: {course_dict.get('기관명', '')}\n"
-        f"주소: {course_dict.get('주소', '')}\n"
-        f"연락처: {course_dict.get('tel', '')}\n"
-        f"요일: {course_dict.get('요일1','')}, {course_dict.get('요일2','')}, "
-        f"{course_dict.get('요일3','')}, {course_dict.get('요일4','')}, {course_dict.get('요일5','')}\n"
-        f"시간: {course_dict.get('시작시간','')} ~ {course_dict.get('종료시간','')}\n"
-        f"금액: {course_dict.get('금액','')}\n"
-        f"카테고리: {course_dict.get('main_category','')} / {course_dict.get('sub_category','')}\n"
-        f"인원원: {course_dict.get('headcount','')}\n"
-        f"태그: {course_dict.get('tags','')}\n"
+        f"프로그램명: {course_dict.name}\n"
+        f"기관명: {course_dict.center.name}\n"
+        f"주소: {course_dict.center.address}\n"
+        f"연락처: {course_dict.center.tel}\n"
+        f"요일: {course_dict.fir_day}, {course_dict.sec_day}, "
+        f"{course_dict.thr_day}, {course_dict.fou_day}, {course_dict.fiv_day}\n"
+        f"시간: {course_dict.start_time} ~ {course_dict.end_time}\n"
+        f"금액: {course_dict.price}원\n"
+        f"카테고리: {course_dict.main_category} / {course_dict.sub_category}\n"
+        f"인원원: {course_dict.headcount}\n"
+        f"태그: {course_dict.tags}\n"
     )
-    return message, course_dict.get("프로그램명", None)
+    return message, course_dict.name
 
 
 def recommend_random_program(user_id):
@@ -157,17 +162,17 @@ def search_program_in_db(keyword):
         conn.close()
 
 
-def search_program_and_build_message(program_keyword):
+def search_program_and_build_message(db:Session, program_keyword):
     """
     특정 프로그램명을 검색해서:
     - 찾으면 무작위로 1개 선택 후 build_program_message()
     - 없으면 generate_nonexistent_program_info() 결과 반환
     실제 라우트에서 편하게 쓰기 위해 만든 함수
     """
-    results = search_program_in_db(program_keyword)
+    results = get_program_by_keyword(db, program_keyword)
     if results:
         chosen = random.choice(results)
-        return build_program_message(chosen), chosen.get("프로그램명", "")
+        return build_program_message(chosen), chosen.name
     else:
         alt_info = generate_nonexistent_program_info(program_keyword)
         # alt_info는 "현재 센터에는 없지만, 이런 프로그램이 있을 수 있다" 등의 문구
@@ -206,26 +211,3 @@ def extract_requested_program(user_message):
     if "none" in candidate_program.lower():
         return None
     return candidate_program.strip()
-
-def get_last_recommended_program(user_id):
-    """
-    user_conversation_log에서 user_id와 일치하며
-    recommended_program이 NOT NULL인 레코드를
-    최신순으로 조회하여 프로그램명을 반환
-    """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            sql = """
-                SELECT recommended_program
-                FROM user_conversation_log
-                WHERE user_id = %s
-                  AND recommended_program IS NOT NULL
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql, (user_id,))
-            row = cursor.fetchone()
-            return row[0] if row else None
-    finally:
-        conn.close()

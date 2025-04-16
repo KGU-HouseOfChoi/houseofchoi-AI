@@ -16,6 +16,6 @@ class MBTI(BaseModel):
     sn: str
     tf: str
     jp: str
-    mbti_str: str | None = None
-    tags_list: list[str] | None = None
+    mbti: str
+    personality_tags: List[str]
     created_at: str

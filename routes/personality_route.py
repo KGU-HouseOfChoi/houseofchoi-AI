@@ -4,13 +4,10 @@ import pymysql
 # FastAPI
 from typing import List
 from fastapi import APIRouter, status, HTTPException
-from fastapi.params import Query, Depends
+from fastapi.params import Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
-from crud.personality import get_latest_personality_by_user_id, create_personality
-from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
 from schemas.personality_schema import AnalyzeResponse, AnalyzeRequest, MBTI
@@ -56,7 +53,7 @@ def get_questions():
     )
 
 @personality_router.post("/analyze", response_model=AnalyzeResponse)
-def post(body: AnalyzeRequest, db: Session=Depends(get_db)):
+def post(body: AnalyzeRequest):
     """
     사용자의 답변을 분석하여 MBTI 유형 및 추가 성격 태그를 반환하는 API
 
@@ -92,36 +89,38 @@ def post(body: AnalyzeRequest, db: Session=Depends(get_db)):
         raise HTTPException(status_code=400, detail="정확히 13개의 A/B 답변이 필요합니다.")
 
     try:
-        mbti_str, all_tags = analyze_13_answers(body.answers)
-        ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
-
-        create_personality(
-            db=db,
-            user_id=int(body.user_id),
-            ei=ei,
-            sn=sn,
-            tf=tf,
-            jp=jp,
-            personality_tags=all_tags
-        )
+        mbti_str, all_tags = analyze_13_answers(answers_13)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    conn = get_capstone_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            tags_str = ",".join(all_tags)
+            sql = """
+            INSERT INTO user_personality (user_id, ei, sn, tf, jp, personality_tags)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
+            cursor.execute(sql, (user_id, ei, sn, tf, jp, tags_str))
+            conn.commit()
     except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"DB 저장 오류: {str(ex)}")
+        return HTTPException(status_code=500, detail=f"DB 저장 오류: {str(ex)}")
+    finally:
+        conn.close()
 
     return AnalyzeResponse(
-        user_id=body.user_id,
+        user_id=user_id,
         mbti=mbti_str,
         personality_tags=all_tags
     )
 
 @personality_router.get("/analysis/{user_id}", response_model=MBTI)
-def get_user_mbti(user_id: int, db: Session = Depends(get_db)):
+def get_user_mbti(user_id: int):
     """
     사용자의 MBTI 유형 및 추가 성격 태그를 반환합니다.
 
-    :param user_id: 유저 고유 아이디 Long
-    :param db: SQLAlchemy 세션 (자동 주입)
+    :param user_id:
     :return:
     ```json
     {
@@ -136,23 +135,44 @@ def get_user_mbti(user_id: int, db: Session = Depends(get_db)):
     }
     ```
     """
-    personality = get_latest_personality_by_user_id(db, user_id)
+    conn = get_capstone_db_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            sql = """
+                SELECT user_id, ei, sn, tf, jp, personality_tags, created_at
+                FROM user_personality
+                WHERE user_id = %s
+                ORDER BY id DESC
+                LIMIT 1
+            """
+            cursor.execute(sql, (user_id,))
+            row = cursor.fetchone()
+    except Exception as ex:
+        return HTTPException(
+            status_code=500,
+            detail=f"DB 조회 오류: {str(ex)}"
+        )
+    finally:
+        conn.close()
 
-    if not personality:
-        raise HTTPException(
+    if not row:
+        return HTTPException(
             status_code=404,
             detail=f"user_id {user_id} 데이터가 없습니다."
         )
 
+    mbti_str = f"{row['ei']}{row['sn']}{row['tf']}{row['jp']}"
+    tags_list = row["personality_tags"].split(',') if row["personality_tags"] else []
+
     return MBTI(
-        user_id=str(user_id),
-        ei=personality.ei,
-        sn=personality.sn,
-        tf=personality.tf,
-        jp=personality.pj,
-        mbti_str=f"{personality.ei}{personality.sn}{personality.tf}{personality.pj}",
-        tags_list=personality.tag.split(',') if personality.tag else [],
-        created_at=str(personality.created_at),
+        user_id=user_id,
+        ei=row['ei'],
+        sn=row['sn'],
+        tf=row['tf'],
+        jp=row['jp'],
+        mbti_str=mbti_str,
+        tags_list=tags_list,
+        created_at=str(row['created_at']),
     )
 
 @personality_router.post("/analysis/{user_id}")
