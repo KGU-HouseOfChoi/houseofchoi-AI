@@ -28,6 +28,6 @@ def get_program_by_id(db: Session, program_id: int) -> Type[Program]:
     return program
 
 def get_program_by_keyword(db: Session, keyword: str) -> list[Type[Program]]:
-    program = db.query(Program).filter(Program.name.like(f"%{keyword}")).all()
+    program = db.query(Program).filter(Program.name.like(f"%{keyword}%")).all()
 
     return program
