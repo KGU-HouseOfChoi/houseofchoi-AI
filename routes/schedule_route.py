@@ -10,7 +10,6 @@ from crud.schedule import get_all_schedules_by_id
 from schemas.schedule_schema import ScheduleResponseSchema
 from utils.database import get_db
 
-
 schedule_router = APIRouter()
 
 @schedule_router.get("/{user_id}", response_model=List[ScheduleResponseSchema])
@@ -21,7 +20,6 @@ def get_schedule(user_id: int, db: Session = Depends(get_db)):
     schedules = get_all_schedules_by_id(db, user_id)
 
     return schedules
-
 
 def save_schedule(user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간):
     """

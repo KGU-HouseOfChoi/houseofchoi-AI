@@ -2,10 +2,13 @@ from typing import List
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+
 from model.schedule import Schedule
 from model.user import User
 from model.program import Program
 from model.center import Center
+from schemas.schedule_schema import ScheduleResponseSchema
+
 
 def create_schedule(
     db: Session,
