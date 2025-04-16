@@ -1,6 +1,5 @@
 import datetime
 import random
-import pymysql
 
 from fastapi import APIRouter, status, HTTPException
 from fastapi.params import Depends
@@ -16,7 +15,6 @@ from model.program import Program
 from schemas.program_schema import ProgramSchema
 from schemas.recommend_schema import ScheduleRequest
 from utils.database import get_db
-from utils.db_utils import get_capstone_db_connection
 
 recommend_router = APIRouter()
 
@@ -87,71 +85,19 @@ def save_program(user_id : int, body: ScheduleRequest, db: Session=Depends(get_d
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-def fetch_user_personality(user_id):
-    """
-    DB에서 user_personality 테이블의 최신 성향 데이터를 가져옵니다.
-    예시 반환:
-    {
-      "user_id": 101,
-      "ei": "E",
-      "sn": "N",
-      "tf": "T",
-      "jp": "P",
-      "personality_tags": "외향적,사회적,활동적"
-    }
-    """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT user_id, ei, sn, tf, jp, personality_tags
-                FROM user_personality
-                WHERE user_id = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql, (user_id,))
-            row = cursor.fetchone()
-            return row
-    except Exception as e:
-        print(f"[ERROR] 사용자 성향 fetch 실패: {e}")
-        return None
-    finally:
-        conn.close()
-
 
 def fetch_all_courses():
     """
     elderly_programs 테이블에서 모든 강좌 데이터를 가져옵니다.
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = "SELECT * FROM elderly_programs"
-            cursor.execute(sql)
-            return cursor.fetchall()
-    finally:
-        conn.close()
+    pass
 
 
 def get_course_personality(course_name):
     """
     course_personality 테이블에서 해당 course_name의 성향(예: '외향형', '내향형')을 조회합니다.
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            sql = """
-                SELECT personality_type
-                FROM course_personality
-                WHERE course_name = %s
-                LIMIT 1
-            """
-            cursor.execute(sql, (course_name,))
-            row = cursor.fetchone()
-            return row[0] if row else None
-    finally:
-        conn.close()
+    pass
 
 
 def make_json_serializable(row):

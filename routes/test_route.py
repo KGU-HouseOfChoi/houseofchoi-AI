@@ -7,12 +7,10 @@ from sqlalchemy import text
 from crud.schedule import create_schedule
 from schemas.test_schema import ScheduleCreateRequest
 from utils.database import get_db
-from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
 
 from crud.user import get_user_by_id
 from crud.program import get_program_by_id
-from crud.center import get_center_by_id
 
 test_router = APIRouter()
 

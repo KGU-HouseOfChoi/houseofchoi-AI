@@ -1,14 +1,11 @@
 import random
-import pymysql
 from fastapi.params import Depends
 from sqlalchemy.orm import Session
 
-from crud.chat_log import get_last_recommended_program_by_user_id
 from crud.personality import get_latest_personality_by_user_id
 from crud.program import get_program_by_keyword, get_all_programs
 from model.program import Program
 from utils.database import get_db
-from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
 
 def fetch_user_personality(user_id):
@@ -23,38 +20,14 @@ def fetch_user_personality(user_id):
       "personality_tags": "외향적,사회적,활동적"
     }
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT user_id, ei, sn, tf, jp, personality_tags
-                FROM user_personality
-                WHERE user_id = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql, (user_id,))
-            row = cursor.fetchone()
-            return row
-    except Exception as e:
-        print(f"[ERROR] 사용자 성향 fetch 실패: {e}")
-        return None
-    finally:
-        conn.close()
+    pass
 
 
 def fetch_all_courses():
     """
     elderly_programs 테이블에서 모든 강좌 데이터를 가져옵니다.
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = "SELECT * FROM elderly_programs"
-            cursor.execute(sql)
-            return cursor.fetchall()
-    finally:
-        conn.close()
+    pass
 
 
 def get_course_personality(course_name):
@@ -62,20 +35,7 @@ def get_course_personality(course_name):
     (사용 여부에 따라) course_personality 테이블에서
     해당 course_name의 성향(외향형/내향형 등) 조회
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            sql = """
-                SELECT personality_type
-                FROM course_personality
-                WHERE course_name = %s
-                LIMIT 1
-            """
-            cursor.execute(sql, (course_name,))
-            row = cursor.fetchone()
-            return row[0] if row else None
-    finally:
-        conn.close()
+    pass
 
 
 def build_program_message(course_dict: Program):
@@ -136,14 +96,7 @@ def search_program_in_db(keyword):
     program_name (또는 '프로그램명') 칼럼에
     keyword를 LIKE 연산으로 검색하여 일치하는 레코드 목록 반환
     """
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = "SELECT * FROM elderly_programs WHERE 프로그램명 LIKE %s"
-            cursor.execute(sql, (f"%{keyword}%",))
-            return cursor.fetchall()
-    finally:
-        conn.close()
+    pass
 
 
 def search_program_and_build_message(db:Session, program_keyword):

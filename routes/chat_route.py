@@ -18,8 +18,7 @@ from utils.chat_utils import (
     search_program_and_build_message,
     extract_requested_program,
 )
-from routes.schedule_route import save_schedule, save_conversation_log
-from schemas.chatbot_schema import ChatbotRequest, ScheduleResponse
+from schemas.chatbot_schema import ChatbotRequest
 
 # API router
 chat_router = APIRouter()

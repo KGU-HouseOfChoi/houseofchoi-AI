@@ -1,5 +1,4 @@
 import json
-import pymysql
 
 # FastAPI
 from fastapi import APIRouter, status
@@ -9,7 +8,6 @@ from fastapi.responses import JSONResponse
 from crud.chat_log import get_recent_user_messages
 from crud.personality import *
 from utils.database import get_db
-from utils.db_utils import get_capstone_db_connection  # DB 연결 함수 (예: capstone DB)
 from utils.gpt_utils import gpt_call
 from schemas.personality_schema import AnalyzeResponse, AnalyzeRequest, MBTI
 
