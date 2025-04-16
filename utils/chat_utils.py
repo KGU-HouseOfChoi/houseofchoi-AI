@@ -1,10 +1,13 @@
 import random
 import pymysql
+from fastapi.params import Depends
 from sqlalchemy.orm import Session
 
 from crud.chat_log import get_last_recommended_program_by_user_id
-from crud.program import get_program_by_keyword
+from crud.personality import get_latest_personality_by_user_id
+from crud.program import get_program_by_keyword, get_all_programs
 from model.program import Program
+from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
 
@@ -92,52 +95,33 @@ def build_program_message(course_dict: Program):
         f"시간: {course_dict.start_time} ~ {course_dict.end_time}\n"
         f"금액: {course_dict.price}원\n"
         f"카테고리: {course_dict.main_category} / {course_dict.sub_category}\n"
-        f"인원원: {course_dict.headcount}\n"
+        f"인원: {course_dict.headcount}\n"
         f"태그: {course_dict.tags}\n"
     )
     return message, course_dict.name
 
 
-def recommend_random_program(user_id):
+def recommend_random_program(user_id: int, db:Session=Depends(get_db)):
     """
     - user_personality 테이블에서 personality_tags 가져옴
     - elderly_programs 테이블의 tags와 교집합이 2개 이상인 프로그램 중 무작위 추천
     - 없으면 에러 메시지 반환
     - 있으면 build_program_message로 메시지 생성 후 반환
     """
-    # 1) 사용자 태그 가져오기
-    conn = get_capstone_db_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT personality_tags
-                FROM user_personality
-                WHERE user_id = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """
-            cursor.execute(sql, (user_id,))
-            row = cursor.fetchone()
-            if not row or not row.get("personality_tags"):
-                return "죄송합니다. 사용자 성향 정보를 가져오지 못했습니다."
-            user_tags_str = row["personality_tags"]
-            user_tags = [t.strip() for t in user_tags_str.split(",") if t.strip()]
-    finally:
-        conn.close()
+    # 1. 사용자 태그 가져오기
+    personality = get_latest_personality_by_user_id(db, user_id)
+    user_tags = [tag.strip() for tag in str(personality.tag).split(",") if tag.strip()]
 
-    # 2) 모든 프로그램 조회
-    courses = fetch_all_courses()
-    if not courses:
-        return "죄송합니다. 현재 등록된 프로그램이 없습니다."
+    # 2. 모든 프로그램 정보 가져오기
+    programs = get_all_programs(db)
 
-    # 3) 태그 교집합(2개 이상) 필터링
+    # 3. 사용자 태그와 비교하여 교집합이 2개 이상이면 추천 후보에 추가
     matched_list = []
-    for course in courses:
-        course_tags_str = course.get("tags", "")
-        course_tags = [t.strip() for t in course_tags_str.split(",") if t.strip()]
-        overlap = set(user_tags) & set(course_tags)
+    for program in programs:
+        program_tag_names = [tag.name for tag in program.tags]
+        overlap = set(user_tags) & set(program_tag_names)
         if len(overlap) >= 2:
-            matched_list.append(course)
+            matched_list.append(program)
 
     if not matched_list:
         return "사용자 성향에 맞는 프로그램이 없습니다."

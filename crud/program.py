@@ -4,10 +4,18 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from model.program import Program
 
+def get_all_programs(db: Session) -> list[Type[Program]]:
+    result = db.query(Program).all()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="프로그램 정보를 찾을 수 없습니다.")
+
+    return result
+
 def get_program_by_name(db: Session, program_name: str) -> Program:
     program = db.query(Program).filter(Program.name == program_name).first()
     if not program:
-        raise HTTPException(status_code=404, detail="Program not found")
+        raise HTTPException(status_code=404, detail="프로그램 정보를 찾을 수 없습니다.")
 
     return program
 
@@ -15,7 +23,7 @@ def get_program_by_id(db: Session, program_id: int) -> Type[Program]:
     program = db.get(Program, program_id)
 
     if not program:
-        raise HTTPException(status_code=404, detail="Program not found")
+        raise HTTPException(status_code=404, detail="프로그램 정보를 찾을 수 없습니다.")
 
     return program
 

@@ -120,7 +120,7 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
     if requested_program is None:
         # (C-1) 프로그램명이 언급되지 않았다면 => 무작위 추천
         # recommend_random_program 함수는 (안내문, 추천된 프로그램명) 두 값을 반환하도록 합니다.
-        raw_msg, found_program_name = recommend_random_program(user_id)
+        raw_msg, found_program_name = recommend_random_program(int(user_id), db)
 
         system_prompt = (
             "당신은 노인 복지 센터의 비서입니다. 아래 문장을 간단히 다듬어 주세요. "
@@ -132,7 +132,7 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
         chatbot_response = recommendation
 
         # 무작위 추천한 프로그램명을 대화 로그에 기록 (found_program_name가 바로 저장됨)
-        save_conversation_log(user_id, user_message, chatbot_response, recommended_program=found_program_name)
+        create_chat_log_with_program(db, user_id, user_message, chatbot_response, recommended_program=found_program_name)
         return JSONResponse(
             status_code=200,
             content=response
