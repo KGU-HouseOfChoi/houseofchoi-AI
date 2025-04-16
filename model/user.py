@@ -7,6 +7,7 @@ from model.base import BaseLongIdEntity
 
 if TYPE_CHECKING:
     from model.schedule import Schedule
+    from model.chat_log import ChatLog
 
 class Role(PyEnum):
     SENIOR = "부모"
@@ -25,3 +26,4 @@ class User(BaseLongIdEntity):
     related_user: Mapped[int | None] = mapped_column("related_user", BigInteger)
 
     schedules: Mapped[list["Schedule"]] = relationship("Schedule", back_populates="user")
+    chat_logs: Mapped[list["ChatLog"]] = relationship("ChatLog", back_populates="user")

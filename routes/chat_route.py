@@ -1,15 +1,17 @@
 import pymysql
 from fastapi import APIRouter, HTTPException
+from fastapi.params import Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log
+from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
 from utils.chat_utils import (
     recommend_random_program,
     search_program_and_build_message,
     extract_requested_program,
-    get_last_recommended_program
 )
 from routes.schedule_route import save_schedule, save_conversation_log
 from schemas.chatbot_schema import ChatbotRequest, ScheduleResponse
@@ -18,7 +20,7 @@ from schemas.chatbot_schema import ChatbotRequest, ScheduleResponse
 chat_router = APIRouter()
 
 @chat_router.post("")
-def post(body: ChatbotRequest):
+def post(body: ChatbotRequest, db: Session=Depends(get_db)):
     """
         챗봇 관련 메인 API
         - `user_id`: 사용자의 고유 ID
@@ -35,9 +37,8 @@ def post(body: ChatbotRequest):
     # (A) "예", "등록" 등으로 일정 등록 의사 표시
     if user_message.lower() in ["예", "네", "등록", "등록할래요"]:
         # 1) 최근 recommended_program 찾기 (프로그램명)
-        recommended_program = get_last_recommended_program(user_id)
+        recommended_program = get_last_recommended_program_by_user_id(user_id, db)
         if not recommended_program:
-            # return jsonify({"error": "최근에 추천된 프로그램이 없습니다."}), 400
             raise HTTPException(
                 status_code=400,
                 detail="최근에 추천된 프로그램이 없습니다."
@@ -59,7 +60,6 @@ def post(body: ChatbotRequest):
             conn.close()
 
         if not program_info:
-            # return jsonify({"error": "추천된 프로그램의 상세 정보를 찾을 수 없습니다."}), 400
             raise HTTPException(
                 status_code=400,
                 detail="추천된 프로그램의 상세 정보를 찾을 수 없습니다."
@@ -118,10 +118,14 @@ def post(body: ChatbotRequest):
             assistant_answer = gpt_call(system_prompt, user_message)
             response["assistant_answer"] = assistant_answer
             chatbot_response = assistant_answer
-            save_conversation_log(user_id, user_message, chatbot_response)
+            chat_log = create_chat_log(db, user_id, user_message, chatbot_response)
             return JSONResponse(
                 status_code=200,
-                content=response
+                content={
+                    "user_id": chat_log.user_id,
+                    "user_message": chat_log.user_message,
+                    "chatbot_response": chat_log.assistant_response
+                }
             )
 
     # (C) 프로그램 추천 관련 처리
@@ -145,6 +149,7 @@ def post(body: ChatbotRequest):
             status_code=200,
             content=response
         )
+        # crud 모듈로 분리 완료
 
     else:
         # (C-2) 프로그램명이 언급되었다면 => DB 검색 또는 안내 메시지
