@@ -5,6 +5,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log, create_chat_log_with_program
+from crud.program import get_program_by_name
+from crud.schedule import create_schedule
+from crud.user import get_user_by_id
 from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
@@ -45,49 +48,31 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
             )
 
         # 2) DB에서 해당 프로그램의 추가 정보를 조회 (요일1~요일5, 시작시간, 종료시간)
-        conn = get_capstone_db_connection()
-        try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                sql = """
-                        SELECT 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간
-                        FROM elderly_programs
-                        WHERE 프로그램명 = %s
-                        LIMIT 1
-                    """
-                cursor.execute(sql, (recommended_program,))
-                program_info = cursor.fetchone()
-        finally:
-            conn.close()
+        print(recommended_program)
+        program = get_program_by_name(db, recommended_program)
+        user = get_user_by_id(db, int(user_id))
 
-        if not program_info:
-            raise HTTPException(
-                status_code=400,
-                detail="추천된 프로그램의 상세 정보를 찾을 수 없습니다."
-            )
         # 3) schedule_route.py의 save_schedule 함수는 새 스키마에 맞춰 9개의 인자를 받으므로 호출
-        success = save_schedule(
-            user_id,
-            recommended_program,
-            program_info.get("요일1"),
-            program_info.get("요일2"),
-            program_info.get("요일3"),
-            program_info.get("요일4"),
-            program_info.get("요일5"),
-            program_info.get("시작시간"),
-            program_info.get("종료시간")
+        schedule = create_schedule(
+            db,
+            user,
+            program,
+            program.center
         )
-        if success:
+
+        if schedule:
             response_text = f"✅ '{recommended_program}' 일정이 등록되었습니다!"
-            save_conversation_log(user_id, user_message, response_text)
+            create_chat_log(db, user_id, user_message, response_text)
             return JSONResponse(
                 status_code=200,
-                content=ScheduleResponse
+                content="일정 등록 성공"
             )
         else:
             raise HTTPException(
                 status_code=500,
                 detail="일정 등록 실패"
             )
+        # crud 모듈 분리 완료
 
     # (B) 사용자 메시지에서 프로그램명 추출
     requested_program = extract_requested_program(user_message)

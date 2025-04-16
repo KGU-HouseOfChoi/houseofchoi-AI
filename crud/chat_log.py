@@ -45,4 +45,4 @@ def get_last_recommended_program_by_user_id(user_id : str, db: Session) -> Optio
         .order_by(ChatLog.id.desc()) \
         .first()
 
-    return last_program if last_program else None
+    return last_program[0] if last_program else None
