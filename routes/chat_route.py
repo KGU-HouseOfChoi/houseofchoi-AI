@@ -4,7 +4,7 @@ from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log
+from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log, create_chat_log_with_program
 from utils.database import get_db
 from utils.db_utils import get_capstone_db_connection
 from utils.gpt_utils import gpt_call
@@ -127,6 +127,7 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
                     "chatbot_response": chat_log.assistant_response
                 }
             )
+        # crud 모듈로 분리 완료
 
     # (C) 프로그램 추천 관련 처리
     if requested_program is None:
@@ -149,12 +150,11 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
             status_code=200,
             content=response
         )
-        # crud 모듈로 분리 완료
 
     else:
         # (C-2) 프로그램명이 언급되었다면 => DB 검색 또는 안내 메시지
         # search_program_and_build_message 함수는 (안내문, 추천된 프로그램명) 두 값을 반환하도록 합니다.
-        raw_msg, found_program_name = search_program_and_build_message(requested_program)
+        raw_msg, found_program_name = search_program_and_build_message(db, requested_program)
 
         # 강제 문자열 변환: 혹시 raw_msg가 예상치 못한 타입일 경우를 대비
         if not isinstance(raw_msg, str):
@@ -172,7 +172,7 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
             response["recommended_program"] = found_program_name
 
             # 특정 프로그램명 언급 시에도 추천된 프로그램명을 대화 로그에 기록
-            save_conversation_log(user_id, user_message, chatbot_response, recommended_program=found_program_name)
+            create_chat_log_with_program(db, user_id, user_message, chatbot_response, recommended_program=found_program_name)
 
         else:
             system_prompt = (
@@ -183,12 +183,13 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
             response["assistant_answer"] = assistant_answer
             chatbot_response = assistant_answer
             # 이 경우 추천된 프로그램명이 없으므로 로그에 저장할 때 생략
-            save_conversation_log(user_id, user_message, chatbot_response)
+            create_chat_log(db, user_id, user_message, chatbot_response)
 
         return JSONResponse(
                 status_code=200,
                 content=response
             )
+    # crud 모듈 등록 완료
 
 
 @chat_router.get("/log/{user_id}")

@@ -14,6 +14,25 @@ def create_chat_log(db: Session, user_id: str, user_message: str, assistant_resp
     db.refresh(chat_log)
     return chat_log
 
+def create_chat_log_with_program(
+        db: Session,
+        user_id: str,
+        user_message: str,
+        assistant_response: Optional[str] = None,
+        recommended_program: Optional[str] = None
+):
+    chat_log = ChatLog(
+        user_id=int(user_id),
+        user_message=user_message,
+        assistant_response = assistant_response,
+        recommended_program = recommended_program
+    )
+
+    db.add(chat_log)
+    db.commit()
+    db.refresh(chat_log)
+    return chat_log
+
 def get_last_recommended_program_by_user_id(user_id : str, db: Session) -> Optional[str]:
     """
         user_conversation_log에서 user_id와 일치하며
