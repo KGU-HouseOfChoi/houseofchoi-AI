@@ -22,7 +22,6 @@ class User(BaseLongIdEntity):
     birth: Mapped[str] = mapped_column(String(20), nullable=False)
     gender: Mapped[str] = mapped_column(String(10), nullable=False)
     role: Mapped[Role | None] = mapped_column(SqlEnum(Role, native_enum=False), nullable=True)
-    personality_tag: Mapped[str | None] = mapped_column("personality_tag", String(255))
     user_code: Mapped[str] = mapped_column("user_code", String(255), nullable=False, unique=True)
     related_user: Mapped[int | None] = mapped_column("related_user", BigInteger)
 
