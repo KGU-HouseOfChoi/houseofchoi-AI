@@ -60,7 +60,7 @@ def save_program(user_id : int, body: ScheduleRequest, db: Session=Depends(get_d
         )
 
     user = get_user_by_id(db, user_id)
-    program = get_program_by_id(db, ScheduleRequest.program_id)
+    program = get_program_by_id(db, body.program_id)
     center = program.center
 
     success = create_schedule(
