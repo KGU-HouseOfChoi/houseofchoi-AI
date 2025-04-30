@@ -104,10 +104,6 @@ def post(body: AnalyzeRequest, db:Session=Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    ei, sn, tf, jp = mbti_str[0], mbti_str[1], mbti_str[2], mbti_str[3]
-    create_personality(db, int(user_id), ei, sn, tf, jp, all_tags)
-
-
     return AnalyzeResponse(
         user_id=body.user_id,
         mbti=mbti_str,
