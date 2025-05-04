@@ -1,8 +1,9 @@
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
-from fastapi.params import Depends
+from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi.params import Depends, File, Form
 from fastapi.responses import JSONResponse
+from redis import Redis
 from sqlalchemy.orm import Session
 
 from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log, create_chat_log_with_program, \
@@ -19,25 +20,84 @@ from utils.chat_utils import (
     extract_requested_program,
 )
 from schemas.chatbot_schema import ChatbotRequest
+from utils.redis_utils import get_redis_client
+from utils.stt_utils import try_stt
 
 # API router
 chat_router = APIRouter()
 
+@chat_router.get("/log/{user_id}", response_model=List[ChatLogResponse])
+def get_log(user_id: str, db :Session=Depends(get_db)):
+    """
+    특정 user_id의 대화 기록 조회
+    GET /chat/log/{user_id}
+    """
+    return get_chat_log_by_id(db, user_id)
+
 @chat_router.post("")
-def post(body: ChatbotRequest, db: Session=Depends(get_db)):
+def chat_with_msg(
+        body: ChatbotRequest,
+        db: Session = Depends(get_db),
+):
     """
-        챗봇 관련 메인 API
+        챗봇 메인 API
         - `user_id`: 사용자의 고유 ID
-        - `message`: 사용자가 선택한 메시지
+        - `message`: 사용자 입력 메시지
     """
-    if not body:
-        raise HTTPException(
-            status_code=400,
-            detail="JSON body is required"
-        )
     user_id = body.user_id
     user_message = body.message
 
+    chatbot_response = get_chatbot_response(body.user_id, user_message, db)
+
+    return JSONResponse(
+        content={
+            "user_id": user_id,
+            "user_message": user_message,
+            "chatbot_response": chatbot_response
+        },
+        status_code=200,
+    )
+
+@chat_router.post("/record")
+async def post(
+        user_id: str = Form(...),
+        audio_file: Optional[UploadFile] = File(None),
+        db: Session=Depends(get_db),
+        redis: Redis = Depends(get_redis_client)
+):
+    """
+        챗봇 stt 관련 API
+        - `user_id`: 사용자의 고유 ID
+        - `audio_file`: 녹음 파일(없으면 메시지가 챗봇에 전송)
+    """
+    if not user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="user_id 입력 필요"
+        )
+
+    if not audio_file:
+        raise HTTPException(
+            status_code=400,
+            detail="녹음 파일 전달 실패"
+        )
+    else:
+        user_message = await try_stt(audio_file, redis)
+
+    print(user_message)
+
+    chatbot_response = get_chatbot_response(user_id, user_message, db)
+
+    return JSONResponse(
+        content={
+            "user_id": user_id,
+            "user_message": user_message,
+            "chatbot_response": chatbot_response
+        },
+        status_code=200,
+    )
+
+def get_chatbot_response(user_id: str, user_message: str, db: Session):
     # (A) "예", "등록" 등으로 일정 등록 의사 표시
     if user_message.lower() in ["예", "네", "등록", "등록할래요"]:
         # 1) 최근 recommended_program 찾기 (프로그램명)
@@ -64,21 +124,16 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
         if schedule:
             response_text = f"✅ '{recommended_program}' 일정이 등록되었습니다!"
             create_chat_log(db, user_id, user_message, response_text)
-            return JSONResponse(
-                status_code=200,
-                content="일정 등록 성공"
-            )
+            return response_text
         else:
             raise HTTPException(
                 status_code=500,
                 detail="일정 등록 실패"
             )
-        # crud 모듈 분리 완료
 
     # (B) 사용자 메시지에서 프로그램명 추출
     requested_program = extract_requested_program(user_message)
     response = {"user_id": user_id}
-    chatbot_response = ""
 
     # (C-0) 대화 의도가 프로그램 추천과 무관할 경우 → 말벗 모드로 전환
     if requested_program is None:
@@ -104,16 +159,8 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
             assistant_answer = gpt_call(system_prompt, user_message)
             response["assistant_answer"] = assistant_answer
             chatbot_response = assistant_answer
-            chat_log = create_chat_log(db, user_id, user_message, chatbot_response)
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "user_id": chat_log.user_id,
-                    "user_message": chat_log.user_message,
-                    "chatbot_response": chat_log.assistant_response
-                }
-            )
-        # crud 모듈로 분리 완료
+            create_chat_log(db, user_id, user_message, chatbot_response)
+            return chatbot_response
 
     # (C) 프로그램 추천 관련 처리
     if requested_program is None:
@@ -132,10 +179,7 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
 
         # 무작위 추천한 프로그램명을 대화 로그에 기록 (found_program_name가 바로 저장됨)
         create_chat_log_with_program(db, user_id, user_message, chatbot_response, recommended_program=found_program_name)
-        return JSONResponse(
-            status_code=200,
-            content=response
-        )
+        return chatbot_response
 
     else:
         # (C-2) 프로그램명이 언급되었다면 => DB 검색 또는 안내 메시지
@@ -159,6 +203,7 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
 
             # 특정 프로그램명 언급 시에도 추천된 프로그램명을 대화 로그에 기록
             create_chat_log_with_program(db, user_id, user_message, chatbot_response, recommended_program=found_program_name)
+            return chatbot_response
 
         else:
             system_prompt = (
@@ -170,18 +215,4 @@ def post(body: ChatbotRequest, db: Session=Depends(get_db)):
             chatbot_response = assistant_answer
             # 이 경우 추천된 프로그램명이 없으므로 로그에 저장할 때 생략
             create_chat_log(db, user_id, user_message, chatbot_response)
-
-        return JSONResponse(
-                status_code=200,
-                content=response
-            )
-    # crud 모듈 등록 완료
-
-
-@chat_router.get("/log/{user_id}", response_model=List[ChatLogResponse])
-def get_log(user_id: str, db :Session=Depends(get_db)):
-    """
-    특정 user_id의 대화 기록 조회
-    GET /chat/log/{user_id}
-    """
-    return get_chat_log_by_id(db, user_id)
+            return chatbot_response

@@ -1,5 +1,7 @@
 import os
 import time
+from typing import Any, Coroutine
+
 import requests
 from fastapi import UploadFile
 from dotenv import load_dotenv
@@ -38,7 +40,7 @@ def fetch_token_from_return_zero(redis: Redis) -> str:
 
     return token
 
-async def try_stt(audio_file: UploadFile, redis: Redis) -> dict:
+async def try_stt(audio_file: UploadFile, redis: Redis) -> str | None | Any:
     # 토큰 가져오기 (레디스 캐시 활용)
     token = fetch_token_from_return_zero(redis)
     if isinstance(token, bytes):
@@ -82,7 +84,10 @@ async def try_stt(audio_file: UploadFile, redis: Redis) -> dict:
         stt_result = stt_result_reponse.json()
 
         if stt_result["status"] == "completed":
-            return stt_result
+            utterances = stt_result.get("results", {}).get("utterances", [])
+            if utterances:
+                return utterances[0]["msg"]  # ✅ msg 값만 반환
+            return ""
         elif stt_result["status"] == "failed":
             raise Exception(f"STT request failed: {response.status_code}, {response.text}")
         else:
