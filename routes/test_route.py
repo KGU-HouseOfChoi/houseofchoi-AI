@@ -1,3 +1,4 @@
+import redis
 from fastapi import APIRouter, status
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
@@ -11,6 +12,7 @@ from utils.gpt_utils import gpt_call
 
 from crud.user import get_user_by_id
 from crud.program import get_program_by_id
+from utils.redis_utils import get_redis_client
 
 test_router = APIRouter()
 
@@ -73,3 +75,23 @@ def create_schedule_for_test(request: ScheduleCreateRequest, db: Session = Depen
     schedule = create_schedule(db=db, user=user, program=program, center=program.center)
 
     return {"message": "Schedule created successfully", "schedule_id": schedule.id}
+
+@test_router.get("/redis")
+def test_redis(redis: redis.Redis = Depends(get_redis_client)):
+    try:
+        redis.set("test", "어르심")
+        redis.getdel("test")
+        return JSONResponse(
+            content={
+                "result":"redis connection successful",
+            },
+            status_code=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={
+                "message": "redis connection failed",
+                "error": str(e)
+            },
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
