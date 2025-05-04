@@ -1,5 +1,6 @@
+import requests
 from redis import Redis
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, File, UploadFile
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -13,7 +14,7 @@ from utils.gpt_utils import gpt_call
 from crud.user import get_user_by_id
 from crud.program import get_program_by_id
 from utils.redis_utils import get_redis_client
-from utils.stt_utils import fetch_token_from_return_zero
+from utils.stt_utils import fetch_token_from_return_zero, try_stt
 
 test_router = APIRouter()
 
@@ -114,3 +115,14 @@ def get_stt_token(redis: Redis=Depends(get_redis_client)):
             },
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@test_router.post("/stt")
+async def transcribe_audio(
+    audio_file: UploadFile = File(...),
+    redis: Redis = Depends(get_redis_client)
+):
+    try:
+        result = await try_stt(audio_file, redis)
+        return JSONResponse(status_code=200, content=result)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
