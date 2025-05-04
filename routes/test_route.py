@@ -1,4 +1,4 @@
-import redis
+from redis import Redis
 from fastapi import APIRouter, status
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
@@ -13,6 +13,7 @@ from utils.gpt_utils import gpt_call
 from crud.user import get_user_by_id
 from crud.program import get_program_by_id
 from utils.redis_utils import get_redis_client
+from utils.stt_utils import fetch_token_from_return_zero
 
 test_router = APIRouter()
 
@@ -77,7 +78,7 @@ def create_schedule_for_test(request: ScheduleCreateRequest, db: Session = Depen
     return {"message": "Schedule created successfully", "schedule_id": schedule.id}
 
 @test_router.get("/redis")
-def test_redis(redis: redis.Redis = Depends(get_redis_client)):
+def test_redis(redis: Redis = Depends(get_redis_client)):
     try:
         redis.set("test", "어르심")
         redis.getdel("test")
@@ -91,6 +92,24 @@ def test_redis(redis: redis.Redis = Depends(get_redis_client)):
         return JSONResponse(
             content={
                 "message": "redis connection failed",
+                "error": str(e)
+            },
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@test_router.get("/stt-token")
+def get_stt_token(redis: Redis=Depends(get_redis_client)):
+    try:
+        token = fetch_token_from_return_zero(redis)
+        return JSONResponse(
+            content=token,
+            status_code=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={
+                "message": "get token failed",
                 "error": str(e)
             },
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
