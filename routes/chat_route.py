@@ -30,12 +30,9 @@ chat_router = APIRouter()
 
 @chat_router.get("/log", response_model=List[ChatLogResponse])
 def get_my_log(
-    user_id: str = Depends(verify_token),     # JWT → user_id 추출
-    db: Session = Depends(get_db)
+    user_id: str = Depends(verify_token),
+    db: Session = Depends(get_db),
 ):
-    """
-    내 대화 기록 조회 (JWT 토큰에서 user_id 추출)
-    """
     return get_chat_log_by_id(db, user_id)
 
 
@@ -59,26 +56,16 @@ def chat_with_msg(
 
 @chat_router.post("/record")
 async def post_record(
-    audio_file: Optional[UploadFile] = File(None),
-    token_user_id: str = Depends(verify_token),       # 토큰 → user_id
+    audio_file: UploadFile | None = File(None),
+    user_id: str = Depends(verify_token),
     db: Session = Depends(get_db),
     redis: Redis = Depends(get_redis_client),
 ):
-    """
-    챗봇 STT API
-    - user_id 는 JWT 토큰에서 자동 추출
-    - audio_file : 녹음된 음성 파일
-    """
-
-    user_id = token_user_id          # 토큰 값을 그대로 사용
-
-    # 🎙️ STT 처리
     try:
         user_message = await try_stt(audio_file, redis)
     except Exception as e:
         raise HTTPException(500, f"STT 변환 실패: {e}")
 
-    # 🤖 챗봇 응답
     try:
         chatbot_response = get_chatbot_response(user_id, user_message, db)
     except Exception as e:
@@ -87,7 +74,6 @@ async def post_record(
     return JSONResponse(
         status_code=200,
         content={
-            "user_id": user_id,
             "user_message": user_message,
             "chatbot_response": chatbot_response,
         },

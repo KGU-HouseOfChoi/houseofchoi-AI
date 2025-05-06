@@ -27,24 +27,18 @@ recommend_router = APIRouter()
 # 사용자 성향 기반 추천 프로그램 목록
 @recommend_router.get("/", response_model=List[ProgramSchema])
 def get_recommend_programs(
-    token_user_id: str = Depends(verify_token),  # JWT → user_id
+    user_id: str = Depends(verify_token),
     db: Session = Depends(get_db),
 ):
-    """
-    GET /recommend/   (Authorization: Bearer <token>)
-    """
-    # 1) 사용자 성향 태그
-    personality = get_latest_personality_by_user_id(db, token_user_id)
+    personality = get_latest_personality_by_user_id(db, user_id)
     user_tags = str(personality.tag).split(",")
 
-    # 2) 프로그램 태그와 교집합 ≥ 2개인 프로그램 필터
     programs = get_all_programs(db)
     matched = [
         p for p in programs
         if len(set(user_tags) & {t.name for t in p.tags}) >= 2
     ]
 
-    # 3) 결과 반환
     if not matched:
         return JSONResponse(
             status_code=404,
@@ -52,26 +46,18 @@ def get_recommend_programs(
         )
     return matched
 
-# 추천 프로그램을 일정으로 저장
+
 @recommend_router.post("/", summary="추천 일정 저장")
 def save_program(
-    body: ScheduleRequest,                         # 이제 body.user_id는 필요 X
-    token_user_id: str = Depends(verify_token),    # JWT → user_id
+    body: ScheduleRequest,                # program_id만 포함
+    user_id: str = Depends(verify_token),
     db: Session = Depends(get_db),
 ):
-    """
-    추천된 프로그램을 사용자의 일정으로 등록합니다.
-    - 클라이언트는 Bearer 토큰과 program_id만 보내면 됨
-    """
-
-    # 1) 사용자·프로그램 조회
-    user = get_user_by_id(db, token_user_id)
+    user = get_user_by_id(db, user_id)
     program = get_program_by_id(db, body.program_id)
 
-    # 2) 일정 생성
     success = create_schedule(db, user, program, program.center)
 
-    # 3) 응답
     if success:
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -81,7 +67,6 @@ def save_program(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"error": "일정 저장에 실패하였습니다."},
     )
-
 
 
 def fetch_all_courses():
