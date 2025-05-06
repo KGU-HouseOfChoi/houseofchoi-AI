@@ -15,75 +15,73 @@ from model.program import Program
 from schemas.program_schema import ProgramSchema
 from schemas.recommend_schema import ScheduleRequest
 from utils.database import get_db
+from utils.jwt_utils import verify_token 
+
+# 공통 유틸
+def _assert_same_user(url_user_id: int | str, token_user_id: str):
+    if str(url_user_id) != str(token_user_id):
+        raise HTTPException(403, "토큰과 user_id가 일치하지 않습니다.")
 
 recommend_router = APIRouter()
 
-@recommend_router.get("/{user_id}", response_model=List[ProgramSchema])
-def get_recommend_programs(user_id: int, db: Session=Depends(get_db)):
+# 사용자 성향 기반 추천 프로그램 목록
+@recommend_router.get("/", response_model=List[ProgramSchema])
+def get_recommend_programs(
+    token_user_id: str = Depends(verify_token),  # JWT → user_id
+    db: Session = Depends(get_db),
+):
     """
-    사용자 성향을 기반으로 추천 프로그램 목록을 반환합니다.
+    GET /recommend/   (Authorization: Bearer <token>)
     """
-    personality = get_latest_personality_by_user_id(db, user_id)
-    tags = str(personality.tag)
-    user_tags = tags.split(",")
+    # 1) 사용자 성향 태그
+    personality = get_latest_personality_by_user_id(db, token_user_id)
+    user_tags = str(personality.tag).split(",")
 
+    # 2) 프로그램 태그와 교집합 ≥ 2개인 프로그램 필터
     programs = get_all_programs(db)
+    matched = [
+        p for p in programs
+        if len(set(user_tags) & {t.name for t in p.tags}) >= 2
+    ]
 
-    matched_list = []
-    for program in programs:
-        program_tag_names = [tag.name for tag in program.tags]
-        overlap = set(user_tags) & set(program_tag_names)
-        if len(overlap) >= 2:
-            matched_list.append(program)
-
-    if not matched_list:
+    # 3) 결과 반환
+    if not matched:
         return JSONResponse(
-            content={
-                "message": "사용자 성향에 맞는 프로그램이 없습니다."
-            },
-            status_code=status.HTTP_404_NOT_FOUND
+            status_code=404,
+            content={"message": "사용자 성향에 맞는 프로그램이 없습니다."},
         )
+    return matched
 
-
-    return matched_list
-
-@recommend_router.post("/{user_id}")
-def save_program(user_id : int, body: ScheduleRequest, db: Session=Depends(get_db)):
+# 추천 프로그램을 일정으로 저장
+@recommend_router.post("/", summary="추천 일정 저장")
+def save_program(
+    body: ScheduleRequest,                         # 이제 body.user_id는 필요 X
+    token_user_id: str = Depends(verify_token),    # JWT → user_id
+    db: Session = Depends(get_db),
+):
     """
     추천된 프로그램을 사용자의 일정으로 등록합니다.
+    - 클라이언트는 Bearer 토큰과 program_id만 보내면 됨
     """
 
-    if body.user_id != user_id:
-        raise HTTPException(
-            detail="URL의 user_id와 요청 본문의 user_id가 일치하지 않습니다.",
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
-
-    user = get_user_by_id(db, user_id)
+    # 1) 사용자·프로그램 조회
+    user = get_user_by_id(db, token_user_id)
     program = get_program_by_id(db, body.program_id)
-    center = program.center
 
-    success = create_schedule(
-        db,
-        user,
-        program,
-        center
-    )
+    # 2) 일정 생성
+    success = create_schedule(db, user, program, program.center)
 
+    # 3) 응답
     if success:
         return JSONResponse(
-            content={
-                "message": "일정이 저장되었습니다."
-            },
-            status_code=status.HTTP_200_OK
+            status_code=status.HTTP_200_OK,
+            content={"message": "일정이 저장되었습니다."},
         )
-    else:
-        return JSONResponse(
-            content={
-                "error": "일정 저장에 실패하였습니다."
-            },
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"error": "일정 저장에 실패하였습니다."},
+    )
+
 
 
 def fetch_all_courses():
