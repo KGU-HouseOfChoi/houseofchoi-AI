@@ -22,80 +22,77 @@ from utils.chat_utils import (
 from schemas.chatbot_schema import ChatbotRequest
 from utils.redis_utils import get_redis_client
 from utils.stt_utils import try_stt
+from utils.jwt_utils import verify_token 
 
 # API router
 chat_router = APIRouter()
 
-@chat_router.get("/log/{user_id}", response_model=List[ChatLogResponse])
-def get_log(user_id: str, db :Session=Depends(get_db)):
+
+@chat_router.get("/log", response_model=List[ChatLogResponse])
+def get_my_log(
+    user_id: str = Depends(verify_token),     # JWT → user_id 추출
+    db: Session = Depends(get_db)
+):
     """
-    특정 user_id의 대화 기록 조회
-    GET /chat/log/{user_id}
+    내 대화 기록 조회 (JWT 토큰에서 user_id 추출)
     """
     return get_chat_log_by_id(db, user_id)
 
-@chat_router.post("")
+
+@chat_router.post("/chat")
 def chat_with_msg(
-        body: ChatbotRequest,
-        db: Session = Depends(get_db),
+    body: ChatbotRequest,
+    user_id: str = Depends(verify_token),
+    db: Session = Depends(get_db),
 ):
-    """
-        챗봇 메인 API
-        - `user_id`: 사용자의 고유 ID
-        - `message`: 사용자 입력 메시지
-    """
-    user_id = body.user_id
     user_message = body.message
-
-    chatbot_response = get_chatbot_response(body.user_id, user_message, db)
-
-    return JSONResponse(
-        content={
-            "user_id": user_id,
-            "user_message": user_message,
-            "chatbot_response": chatbot_response
-        },
-        status_code=200,
-    )
-
-@chat_router.post("/record")
-async def post(
-        user_id: str = Form(...),
-        audio_file: Optional[UploadFile] = File(None),
-        db: Session=Depends(get_db),
-        redis: Redis = Depends(get_redis_client)
-):
-    """
-        챗봇 stt 관련 API
-        - `user_id`: 사용자의 고유 ID
-        - `audio_file`: 녹음 파일(없으면 메시지가 챗봇에 전송)
-    """
-    if not user_id:
-        raise HTTPException(
-            status_code=400,
-            detail="user_id 입력 필요"
-        )
-
-    if not audio_file:
-        raise HTTPException(
-            status_code=400,
-            detail="녹음 파일 전달 실패"
-        )
-    else:
-        user_message = await try_stt(audio_file, redis)
-
-    print(user_message)
-
     chatbot_response = get_chatbot_response(user_id, user_message, db)
 
     return JSONResponse(
+        status_code=200,
+        content={
+            "user_message": user_message,
+            "chatbot_response": chatbot_response,
+        },
+    )
+
+
+@chat_router.post("/record")
+async def post_record(
+    audio_file: Optional[UploadFile] = File(None),
+    token_user_id: str = Depends(verify_token),       # 토큰 → user_id
+    db: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis_client),
+):
+    """
+    챗봇 STT API
+    - user_id 는 JWT 토큰에서 자동 추출
+    - audio_file : 녹음된 음성 파일
+    """
+
+    user_id = token_user_id          # 토큰 값을 그대로 사용
+
+    # 🎙️ STT 처리
+    try:
+        user_message = await try_stt(audio_file, redis)
+    except Exception as e:
+        raise HTTPException(500, f"STT 변환 실패: {e}")
+
+    # 🤖 챗봇 응답
+    try:
+        chatbot_response = get_chatbot_response(user_id, user_message, db)
+    except Exception as e:
+        raise HTTPException(500, f"챗봇 응답 생성 실패: {e}")
+
+    return JSONResponse(
+        status_code=200,
         content={
             "user_id": user_id,
             "user_message": user_message,
-            "chatbot_response": chatbot_response
+            "chatbot_response": chatbot_response,
         },
-        status_code=200,
     )
+
 
 def get_chatbot_response(user_id: str, user_message: str, db: Session):
     # (A) "예", "등록" 등으로 일정 등록 의사 표시

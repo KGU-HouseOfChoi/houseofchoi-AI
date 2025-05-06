@@ -9,17 +9,22 @@ from sqlalchemy.orm import Session
 from crud.schedule import get_all_schedules_by_id
 from schemas.schedule_schema import ScheduleResponseSchema
 from utils.database import get_db
+from utils.jwt_utils import verify_token
 
 schedule_router = APIRouter()
 
-@schedule_router.get("/{user_id}", response_model=List[ScheduleResponseSchema])
-def get_schedule(user_id: int, db: Session = Depends(get_db)):
+@schedule_router.get("/", response_model=List[ScheduleResponseSchema])
+def get_schedule(
+    token_user_id: str = Depends(verify_token),  # JWT → user_id
+    db: Session = Depends(get_db),
+):
     """
-    일정 목록을 조회하는 API
+    내 일정 목록 조회  
+    GET /schedule   (Authorization: Bearer <token>)
     """
-    schedules = get_all_schedules_by_id(db, user_id)
-
+    schedules = get_all_schedules_by_id(db, token_user_id)
     return schedules
+
 
 def save_schedule(user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간):
     """
