@@ -15,7 +15,12 @@ from crud.personality import (
 from schemas.personality_schema import AnalyzeRequest, AnalyzeResponse, MBTI
 from utils.database import get_db
 from utils.gpt_utils import gpt_call
+<<<<<<< HEAD
 from utils.jwt_utils import verify_token  # 쿠키 전용 verify_token
+=======
+from schemas.personality_schema import AnalyzeResponse, AnalyzeRequest, MBTI
+from utils.jwt_utils import verify_token 
+>>>>>>> main
 
 personality_router = APIRouter(prefix="/personality", tags=["personality"])
 
@@ -38,6 +43,7 @@ QUESTIONS = [
     {"id": 13, "question": "조용한 활동을 선호하시나요?",  "choices": ["(A) 예", "(B) 아니요"]},
 ]
 
+<<<<<<< HEAD
 # ────────────────────────────────────────────────
 # 온보딩 분석
 # ────────────────────────────────────────────────
@@ -83,6 +89,84 @@ def get_user_mbti(
 
     return MBTI(
         user_id=user_id,
+=======
+@personality_router.get("/questions")
+def get_questions(token_user_id: str = Depends(verify_token)):
+    """
+    성격 테스트 질문 목록을 반환하는 API  
+    🔒 인증 필요 (JWT 토큰 필요)
+
+    **응답 예시**
+    ```json
+    {
+        "questions": [
+            "질문 1",
+            "질문 2",
+            "...",
+            "질문 13"
+        ]
+    }
+    ```
+    """
+    return JSONResponse(content={"data": QUESTIONS}, status_code=status.HTTP_200_OK)
+
+@personality_router.post("/analyze", response_model=AnalyzeResponse)
+def analyze_personality(
+    body: AnalyzeRequest,                          # 요청 스키마는 그대로 두되
+    token_user_id: str = Depends(verify_token),    # 🔑 JWT → user_id
+    db: Session = Depends(get_db),
+):
+    """
+    사용자의 답변을 분석하여 MBTI 유형 및 추가 성격 태그를 반환하는 API  
+    (이제 Body에 user_id를 보내지 않아도 됩니다)
+
+    **요청 Body 예시**
+    ```json
+    {
+        "answers": ["A", "B", "A", "B", "A", "B", "A", "B", "A", "B", "A", "B", "A"]
+    }
+    ```
+    """
+    answers_13 = body.answers
+
+    # 🔍 유효성 검사
+    if len(answers_13) != 13:
+        raise HTTPException(400, "정확히 13개의 A/B 답변이 필요합니다.")
+
+    # 🧠 MBTI 분석
+    mbti_str, all_tags = analyze_13_answers(answers_13)
+    ei, sn, tf, jp = mbti_str
+
+    # 📝 DB 저장
+    create_personality(
+        db=db,
+        user_id=int(token_user_id),
+        ei=ei, sn=sn, tf=tf, jp=jp,
+        personality_tags=all_tags,
+    )
+
+    return AnalyzeResponse(
+        user_id=token_user_id,
+        mbti=mbti_str,
+        personality_tags=all_tags,
+    )
+
+@personality_router.get("/analysis", response_model=MBTI)
+def get_user_mbti(
+    token_user_id: str = Depends(verify_token),    # 🔑 JWT → user_id
+    db: Session = Depends(get_db),
+):
+    """
+    사용자의 MBTI 유형 및 추가 성격 태그를 반환합니다.  
+    GET /personality/analysis   (Bearer 토큰 필요)
+    """
+    personality = get_latest_personality_by_user_id(db, token_user_id)
+    mbti_str = f"{personality.ei}{personality.sn}{personality.tf}{personality.pj}"
+    tags_list = str(personality.tag).split(",") if personality.tag else []
+
+    return MBTI(
+        user_id=token_user_id,
+>>>>>>> main
         ei=personality.ei,
         sn=personality.sn,
         tf=personality.tf,
@@ -91,6 +175,7 @@ def get_user_mbti(
         personality_tags=tags,
     )
 
+<<<<<<< HEAD
 # ────────────────────────────────────────────────
 # 최근 대화 기반 재분석
 # ────────────────────────────────────────────────
@@ -100,19 +185,45 @@ def reanalyze_mbti(
     user_id: str = Depends(verify_token),
     db: Session = Depends(get_db),
 ):
+=======
+@personality_router.post("/analysis")
+def reanalyze_mbti(
+    days: int = Query(30, description="최근 N일간의 데이터를 분석 (기본값: 30일)"),
+    token_user_id: str = Depends(verify_token),    # 🔑 JWT → user_id
+    db: Session = Depends(get_db),
+):
+    """
+    최근 30일(기본)의 대화내용을 바탕으로 사용자의 성향을 재분석합니다.
+
+    GPT에게 JSON 형식으로 결과를 받아 변화가 있으면 DB를 업데이트합니다.
+    """
+>>>>>>> main
     try:
-        logs = get_recent_user_messages(db, user_id, days)
+        # 1️⃣ 최근 대화 로그 가져오기
+        logs = get_recent_user_messages(db, token_user_id, days)
         if not logs:
+<<<<<<< HEAD
             raise HTTPException(404, f"{days}일간 대화 기록이 없습니다.")
 
         convo = "\n".join(l.user_message for l in logs)
         sys_prompt = (
             "당신은 노인 복지센터 AI 분석가입니다. 최근 대화로 성향 변화 여부를 분석하세요. "
             "아래 JSON 형식으로 출력하세요."
+=======
+            raise HTTPException(404, f"{days}일간 대화 기록이 없어 분석 불가")
+
+        conversation_text = "\n".join([log.user_message for log in logs])
+
+        # 2️⃣ GPT 프롬프트
+        system_prompt = (
+            "당신은 노인 복지센터 AI 분석가입니다. 최근 대화를 바탕으로 사용자의 성향 변화 여부를 분석하세요. "
+            "아래 JSON 형식으로 결과를 출력하세요. 각 항목은 변경된 경우 새 값을, 변화가 없으면 'NO_CHANGE'로 출력하세요."
+>>>>>>> main
         )
         gpt_json = gpt_call(sys_prompt, f"최근 {days}일 대화:\n{convo}")
         changes = json.loads(gpt_json)
 
+<<<<<<< HEAD
         cur = get_latest_personality_by_user_id(db, user_id)
 
         def updated(cur_val, change_val):
@@ -125,18 +236,64 @@ def reanalyze_mbti(
 
         if (new_ei, new_sn, new_tf, new_jp) == (cur.ei, cur.sn, cur.tf, cur.pj):
             return JSONResponse(200, {"message": "성향 변화 없음"})
+=======
+        gpt_result = gpt_call(system_prompt, user_prompt)
+        changes = json.loads(gpt_result)
+
+        # 3️⃣ 현재 성향 로드
+        current_row = get_latest_personality_by_user_id(db, token_user_id)
+
+        # 4️⃣ 변경 적용
+        def get_updated(current, change):
+            return change[-1] if change.startswith("NEW_") else current
+>>>>>>> main
 
         new_mbti = f"{new_ei}{new_sn}{new_tf}{new_jp}"
         new_tags = ",".join(analyze_mbti_tags(new_mbti))
 
+<<<<<<< HEAD
         update_latest_personality_by_user_id(
             db, user_id, new_ei, new_sn, new_tf, new_jp, new_tags
+=======
+        # 변화 없으면 종료
+        if (updated_ei, updated_sn, updated_tf, updated_jp) == (
+            current_row.ei,
+            current_row.sn,
+            current_row.tf,
+            current_row.pj,
+        ):
+            return JSONResponse(200, {"message": "성향 변화 없음"})
+
+        # 5️⃣ DB 업데이트
+        new_mbti = f"{updated_ei}{updated_sn}{updated_tf}{updated_jp}"
+        new_tags = analyze_mbti_tags(new_mbti)
+        tags_str = ",".join(new_tags)
+
+        update_latest_personality_by_user_id(
+            db,
+            token_user_id,
+            updated_ei,
+            updated_sn,
+            updated_tf,
+            updated_jp,
+            tags_str,
+>>>>>>> main
         )
 
         return JSONResponse(
             200,
+<<<<<<< HEAD
             {"message": f"업데이트 완료 ▶ MBTI {new_mbti}, 태그 {new_tags}"},
         )
+=======
+            {"message": f"성향 업데이트 완료. 새 MBTI: {new_mbti}, 태그: {tags_str}"},
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(500, f"분석 중 오류 발생: {e}")
+>>>>>>> main
 
     except HTTPException:
         raise

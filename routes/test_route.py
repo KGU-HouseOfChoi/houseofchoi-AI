@@ -1,6 +1,10 @@
 import requests
 from redis import Redis
 from fastapi import APIRouter, status, File, UploadFile, Depends, HTTPException
+<<<<<<< HEAD
+=======
+from fastapi.params import Depends
+>>>>>>> main
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -42,9 +46,15 @@ def test_db(db: Session = Depends(get_db)):
 # GPT 챗봇 테스트 (쿠키 인증)
 # ────────────────────────────────────────────────
 @test_router.post("/chatbot")
+<<<<<<< HEAD
 def chatbot_test(user_id: str = Depends(verify_token)):
     """
     쿠키 AccessToken → user_id 추출
+=======
+def chatbot_test(token_user_id: str = Depends(verify_token)):
+    """
+    OpenAI GPT 챗봇 테스트 API (JWT 인증 필요)
+>>>>>>> main
     """
     try:
         system_prompt = "당신은 친절한 AI 비서입니다."
@@ -52,6 +62,7 @@ def chatbot_test(user_id: str = Depends(verify_token)):
 
         return {
             "message": "야로밥라니",
+<<<<<<< HEAD
             "user_id": user_id,
             "response": response_text,
         }
@@ -78,6 +89,29 @@ def create_schedule_for_test(
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
+=======
+            "user_id": token_user_id,     # 🔑 토큰에서 추출한 user_id
+            "response": response_text
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"GPT 호출 실패: {e}")
+
+@test_router.post("/save/schedule")
+def create_schedule_for_test(
+    request: ScheduleCreateRequest,
+    db: Session = Depends(get_db),
+    token_user_id: str = Depends(verify_token),
+):
+    """
+    테스트용 일정 저장 (JWT 필요)
+    """
+    if str(request.user_id) != str(token_user_id):
+        return JSONResponse(
+            content={"error": "user_id와 토큰이 일치하지 않습니다."},
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+>>>>>>> main
     user = get_user_by_id(db, request.user_id)
     program = get_program_by_id(db, request.program_id)
     schedule = create_schedule(db=db, user=user, program=program, center=program.center)
@@ -106,24 +140,47 @@ def test_redis(redis: Redis = Depends(get_redis_client)):
 @test_router.get("/stt-token")
 def get_stt_token(
     redis: Redis = Depends(get_redis_client),
+<<<<<<< HEAD
     user_id: str = Depends(verify_token),
 ):
+=======
+    token_user_id: str = Depends(verify_token),
+):
+    """
+    ReturnZero STT 토큰 요청 (JWT 필요)
+    """
+>>>>>>> main
     try:
         token = fetch_token_from_return_zero(redis)
         return token
     except Exception as e:
+<<<<<<< HEAD
         return JSONResponse({"message": "get token failed", "error": str(e)}, status_code=500)
 
 
 # ────────────────────────────────────────────────
 # STT 테스트
 # ────────────────────────────────────────────────
+=======
+        return JSONResponse(
+            content={"message": "get token failed", "error": str(e)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    
+>>>>>>> main
 @test_router.post("/stt")
 async def transcribe_audio(
     audio_file: UploadFile = File(...),
     redis: Redis = Depends(get_redis_client),
+<<<<<<< HEAD
     user_id: str = Depends(verify_token),
+=======
+    token_user_id: str = Depends(verify_token),
+>>>>>>> main
 ):
+    """
+    STT 음성 변환 (JWT 필요)
+    """
     try:
         result = await try_stt(audio_file, redis)
         return JSONResponse(status_code=200, content=result)

@@ -11,20 +11,35 @@ from utils.jwt_utils import verify_token
 
 schedule_router = APIRouter(prefix="/schedule", tags=["schedule"])
 
+<<<<<<< HEAD
 
 @schedule_router.get("/", response_model=List[ScheduleResponseSchema])
 def get_schedule(
     user_id: str = Depends(verify_token),
+=======
+@schedule_router.get("/", response_model=List[ScheduleResponseSchema])
+def get_schedule(
+    token_user_id: str = Depends(verify_token),  # JWT → user_id
+>>>>>>> main
     db: Session = Depends(get_db),
 ):
     """
     내 일정 목록 조회  
+<<<<<<< HEAD
     (AccessToken 쿠키 인증)
     """
     return get_all_schedules_by_id(db, user_id)
 
 
 # 아래 함수들은 미구현 스텁 그대로 두었습니다
+=======
+    GET /schedule   (Authorization: Bearer <token>)
+    """
+    schedules = get_all_schedules_by_id(db, token_user_id)
+    return schedules
+
+
+>>>>>>> main
 def save_schedule(user_id, program_name, 요일1, 요일2, 요일3, 요일4, 요일5, 시작시간, 종료시간):
     pass
 
