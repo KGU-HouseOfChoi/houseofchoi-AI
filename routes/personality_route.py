@@ -31,6 +31,26 @@ QUESTIONS = [
     {"id": 13, "question": "조용한 활동을 선호하시나요?", "choices": ["(A) 예", "(B) 아니요"]},
 ]
 
+@personality_router.get("/questions")
+def get_questions(token_user_id: str = Depends(verify_token)):
+    """
+    성격 테스트 질문 목록을 반환하는 API  
+    🔒 인증 필요 (JWT 토큰 필요)
+
+    **응답 예시**
+    ```json
+    {
+        "questions": [
+            "질문 1",
+            "질문 2",
+            "...",
+            "질문 13"
+        ]
+    }
+    ```
+    """
+    return JSONResponse(content={"data": QUESTIONS}, status_code=status.HTTP_200_OK)
+
 @personality_router.post("/analyze", response_model=AnalyzeResponse)
 def analyze_personality(
     body: AnalyzeRequest,                          # 요청 스키마는 그대로 두되
