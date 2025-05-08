@@ -1,6 +1,12 @@
+from os.path import exists
+
 from fastapi import HTTPException
+from select import select
 from sqlalchemy.orm import Session
 from model.personality import Personality
+
+def is_exist_personality(db: Session, user_id: str) -> bool:
+    return db.query(db.query(Personality).filter(Personality.user_id == user_id).exists()).scalar()
 
 def get_latest_personality_by_user_id(db: Session, user_id: int) -> Personality | None:
     result = db.query(Personality).filter(Personality.user_id == user_id).order_by(Personality.id.desc()).first()
