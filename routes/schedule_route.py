@@ -13,7 +13,7 @@ from utils.jwt_utils import verify_token
 
 schedule_router = APIRouter()
 
-@schedule_router.get("/", response_model=List[ScheduleResponseSchema])
+@schedule_router.get("", response_model=List[ScheduleResponseSchema])
 def get_schedule(
     token_user_id: str = Depends(verify_token),  # JWT → user_id
     db: Session = Depends(get_db),

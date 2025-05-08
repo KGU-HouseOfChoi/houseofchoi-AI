@@ -25,13 +25,13 @@ def _assert_same_user(url_user_id: int | str, token_user_id: str):
 recommend_router = APIRouter()
 
 # 사용자 성향 기반 추천 프로그램 목록
-@recommend_router.get("/", response_model=List[ProgramSchema])
+@recommend_router.get("", response_model=List[ProgramSchema])
 def get_recommend_programs(
     token_user_id: str = Depends(verify_token),  # JWT → user_id
     db: Session = Depends(get_db),
 ):
     """
-    GET /recommend/   (Authorization: Bearer <token>)
+    GET /recommend   (Authorization: Bearer <token>)
     """
     # 1) 사용자 성향 태그
     personality = get_latest_personality_by_user_id(db, token_user_id)
@@ -53,7 +53,7 @@ def get_recommend_programs(
     return matched
 
 # 추천 프로그램을 일정으로 저장
-@recommend_router.post("/", summary="추천 일정 저장")
+@recommend_router.post("", summary="추천 일정 저장")
 def save_program(
     body: ScheduleRequest,                         # 이제 body.user_id는 필요 X
     token_user_id: str = Depends(verify_token),    # JWT → user_id

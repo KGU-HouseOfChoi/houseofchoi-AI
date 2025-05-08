@@ -1,4 +1,5 @@
 import json
+from importlib.resources import contents
 
 # FastAPI
 from fastapi import APIRouter, status
@@ -32,7 +33,7 @@ QUESTIONS = [
 ]
 
 @personality_router.get("/questions")
-def get_questions(token_user_id: str = Depends(verify_token)):
+def get_questions(db: Session = Depends(get_db), token_user_id: str = Depends(verify_token)):
     """
     성격 테스트 질문 목록을 반환하는 API  
     🔒 인증 필요 (JWT 토큰 필요)
@@ -49,6 +50,13 @@ def get_questions(token_user_id: str = Depends(verify_token)):
     }
     ```
     """
+
+    if is_exist_personality(db, token_user_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이미 성향 분석을 완료한 유저입니다."
+        )
+
     return JSONResponse(content={"data": QUESTIONS}, status_code=status.HTTP_200_OK)
 
 @personality_router.post("/analyze", response_model=AnalyzeResponse)
