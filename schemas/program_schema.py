@@ -1,6 +1,11 @@
-from pydantic import BaseModel
+from dotenv import load_dotenv
+from pydantic import BaseModel, model_validator
 from datetime import time
+from typing import Optional, List
 
+import os
+
+load_dotenv()
 
 class TagSchema(BaseModel):
     name: str
@@ -23,6 +28,13 @@ class ProgramSchema(BaseModel):
     sub_category: str
     headcount: str
     tags: list[TagSchema] | None
+    image_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def add_image_url(self) -> "ProgramSchema":
+        base_url = os.getenv("AWS_IMAGE_URL")
+        self.image_url = f"{base_url}/{self.id}.jpg"
+        return self
 
     class Config:
         from_attributes = True
