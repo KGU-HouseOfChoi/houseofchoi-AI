@@ -1,11 +1,11 @@
 from typing import List, Type
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from model.program import Program
 
 def get_all_programs(db: Session) -> list[Type[Program]]:
-    result = db.query(Program).all()
+    result = db.query(Program).options(joinedload(Program.center)).all()
 
     if not result:
         raise HTTPException(status_code=404, detail="프로그램 정보를 찾을 수 없습니다.")
