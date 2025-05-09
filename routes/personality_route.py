@@ -21,7 +21,7 @@ QUESTIONS = [
     {"id": 2,  "question": "새로운 기술을 배울 때?",       "choices": ["(A) 직접 시도", "(B) 도움 요청"]},
     {"id": 3,  "question": "혼자 VS 함께?",             "choices": ["(A) 혼자가 좋다", "(B) 사람들과 함께"]},
     {"id": 4,  "question": "계획형 VS 즉흥형?",         "choices": ["(A) 미리 계획", "(B) 즉흥 결정"]},
-    {"id": 5,  "question": "새로운 장소 vs 익숙한 장소?",  "choices": ["(A) 익숙한 곳", "(B) 새로운 곳"]},
+    {"id": 5,  "question": "익숙한 장소 vs 새로운 장소?",  "choices": ["(A) 익숙한 곳", "(B) 새로운 곳"]},
     {"id": 6,  "question": "결정할 때?",              "choices": ["(A) 신중하게", "(B) 직감으로"]},
     {"id": 7,  "question": "사회적 활동?",             "choices": ["(A) 참여한다", "(B) 혼자가 좋다"]},
     {"id": 8,  "question": "변화를 좋아하는가?",         "choices": ["(A) 변화를 좋아함", "(B) 안정이 좋다"]},
