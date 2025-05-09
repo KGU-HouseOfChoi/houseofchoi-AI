@@ -5,6 +5,8 @@ from typing import Optional, List
 
 import os
 
+from schemas.center_schema import CenterSchema
+
 load_dotenv()
 
 class TagSchema(BaseModel):
@@ -29,6 +31,7 @@ class ProgramSchema(BaseModel):
     headcount: str
     tags: list[TagSchema] | None
     image_url: Optional[str] = None
+    center: CenterSchema | None
 
     @model_validator(mode="after")
     def add_image_url(self) -> "ProgramSchema":
