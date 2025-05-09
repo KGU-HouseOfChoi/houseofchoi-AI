@@ -39,7 +39,7 @@ def get_my_log(
     return get_chat_log_by_id(db, user_id)
 
 
-@chat_router.post("/chat")
+@chat_router.post("")
 def chat_with_msg(
     body: ChatbotRequest,
     user_id: str = Depends(verify_token),
