@@ -130,73 +130,99 @@ def reanalyze_mbti(
     db: Session = Depends(get_db),
 ):
     """
-    최근 30일(기본)의 대화내용을 바탕으로 사용자의 성향을 재분석합니다.
-
-    GPT에게 JSON 형식으로 결과를 받아 변화가 있으면 DB를 업데이트합니다.
+    최근 N일 대화내용을 바탕으로 사용자의 성향(MBTI) 변화를 재분석한다.
+    GPT가 JSON 이외의 내용을 섞어 보내도 안전하게 파싱하고,
+    기존 성향이 없을 때(최초 분석)도 처리한다.
     """
+    import json, re
+    from types import SimpleNamespace
+
+    # ---------- 헬퍼 ---------- #
+    def safe_json_loads(raw: str) -> dict:
+        """GPT 응답에서 첫 '{...}' 블록만 추출해 파싱."""
+        if isinstance(raw, (dict, list)):
+            return raw
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            m = re.search(r'\{.*\}', raw, re.S)
+            if m:
+                return json.loads(m.group())
+            raise
+
+    def get_updated(current: str | None, change: str | None) -> str | None:
+        """NO_CHANGE / None이면 current 유지, 아니면 새 값."""
+        return current if change in (None, "NO_CHANGE") else change
+
+    # 1️⃣ 최근 대화 로그
+    logs = get_recent_user_messages(db, token_user_id, days)
+    if not logs:
+        raise HTTPException(404, f"{days}일간 대화 기록이 없어 분석 불가")
+
+    conversation_text = "\n".join(log.user_message for log in logs)
+
+    # 2️⃣ GPT 호출
+    system_prompt = (
+        "당신은 노인 복지센터 AI 분석가입니다. 최근 대화를 바탕으로 사용자의 MBTI 네 지표(EI/SN/TF/JP)가 "
+        "변했는지 판단해 아래 JSON 형식으로만 답하세요. "
+        "변화 없으면 'NO_CHANGE', 바뀌었으면 새 값을 적으세요.\n"
+        '{ "ei": "E", "sn": "NO_CHANGE", "tf": "F", "jp": "NO_CHANGE" }'
+    )
+    user_prompt = f"최근 {days}일간 사용자 대화:\n{conversation_text}"
+
+    gpt_raw = gpt_call(system_prompt, user_prompt)
+    print("GPT raw >>>", repr(gpt_raw)[:300])
+
     try:
-        # 1️⃣ 최근 대화 로그 가져오기
-        logs = get_recent_user_messages(db, token_user_id, days)
-        if not logs:
-            raise HTTPException(404, f"{days}일간 대화 기록이 없어 분석 불가")
-
-        conversation_text = "\n".join([log.user_message for log in logs])
-
-        # 2️⃣ GPT 프롬프트
-        system_prompt = (
-            "당신은 노인 복지센터 AI 분석가입니다. 최근 대화를 바탕으로 사용자의 성향 변화 여부를 분석하세요. "
-            "아래 JSON 형식으로 결과를 출력하세요. 각 항목은 변경된 경우 새 값을, 변화가 없으면 'NO_CHANGE'로 출력하세요."
-        )
-        user_prompt = f"최근 {days}일간 사용자 대화:\n{conversation_text}"
-
-        gpt_result = gpt_call(system_prompt, user_prompt)
-        changes = json.loads(gpt_result)
-
-        # 3️⃣ 현재 성향 로드
-        current_row = get_latest_personality_by_user_id(db, token_user_id)
-
-        # 4️⃣ 변경 적용
-        def get_updated(current, change):
-            return change[-1] if change.startswith("NEW_") else current
-
-        updated_ei = get_updated(current_row.ei, changes.get("ei", "NO_CHANGE"))
-        updated_sn = get_updated(current_row.sn, changes.get("sn", "NO_CHANGE"))
-        updated_tf = get_updated(current_row.tf, changes.get("tf", "NO_CHANGE"))
-        updated_jp = get_updated(current_row.pj, changes.get("jp", "NO_CHANGE"))
-
-        # 변화 없으면 종료
-        if (updated_ei, updated_sn, updated_tf, updated_jp) == (
-            current_row.ei,
-            current_row.sn,
-            current_row.tf,
-            current_row.pj,
-        ):
-            return JSONResponse(200, {"message": "성향 변화 없음"})
-
-        # 5️⃣ DB 업데이트
-        new_mbti = f"{updated_ei}{updated_sn}{updated_tf}{updated_jp}"
-        new_tags = analyze_mbti_tags(new_mbti)
-        tags_str = ",".join(new_tags)
-
-        update_latest_personality_by_user_id(
-            db,
-            token_user_id,
-            updated_ei,
-            updated_sn,
-            updated_tf,
-            updated_jp,
-            tags_str,
-        )
-
-        return JSONResponse(
-            200,
-            {"message": f"성향 업데이트 완료. 새 MBTI: {new_mbti}, 태그: {tags_str}"},
-        )
-
-    except HTTPException as he:
-        raise he
+        changes = safe_json_loads(gpt_raw)
     except Exception as e:
-        raise HTTPException(500, f"분석 중 오류 발생: {e}")
+        raise HTTPException(
+            502,
+            f"GPT JSON 파싱 실패: {e}. 응답 일부: {gpt_raw[:200]}",
+        )
+
+    # 3️⃣ 현재 성향 로드(없으면 최초 분석)
+    current_row = get_latest_personality_by_user_id(db, token_user_id)
+    if current_row is None:
+        current_row = SimpleNamespace(ei=None, sn=None, tf=None, pj=None)
+
+    # 4️⃣ 변경 반영
+    updated_ei = get_updated(current_row.ei, changes.get("ei"))
+    updated_sn = get_updated(current_row.sn, changes.get("sn"))
+    updated_tf = get_updated(current_row.tf, changes.get("tf"))
+    updated_jp = get_updated(current_row.pj, changes.get("jp"))
+
+    # 변화 없으면 종료
+    if (updated_ei, updated_sn, updated_tf, updated_jp) == (
+        current_row.ei,
+        current_row.sn,
+        current_row.tf,
+        current_row.pj,
+    ):
+        return JSONResponse(
+    content={"message": "성향 변화 없음"},
+    status_code=200,
+)
+
+    # 5️⃣ DB 업데이트
+    new_mbti = f"{updated_ei}{updated_sn}{updated_tf}{updated_jp}"
+    new_tags = ",".join(analyze_mbti_tags(new_mbti))
+
+    update_latest_personality_by_user_id(
+        db,
+        token_user_id,
+        updated_ei,
+        updated_sn,
+        updated_tf,
+        updated_jp,
+        new_tags,
+    )
+
+    return JSONResponse(
+    content={"message": f"성향 업데이트 완료. 새 MBTI: {new_mbti}, 태그: {new_tags}"},
+    status_code=200,
+)
+
 
 # ---------------------------
 # 아래는 MBTI/온보딩 분석 로직 함수들
