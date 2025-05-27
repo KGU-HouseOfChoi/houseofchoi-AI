@@ -119,7 +119,7 @@ def get_chatbot_response(user_id: str, user_message: str, db: Session):
         )
 
         if schedule:
-            response_text = f"✅ '{recommended_program}' 일정이 등록되었습니다!"
+            response_text = f" '{recommended_program}' 일정이 등록되었습니다!"
             create_chat_log(db, user_id, user_message, response_text)
             return response_text
         else:
