@@ -167,7 +167,7 @@ def get_chatbot_response(user_id: str, user_message: str, db: Session):
 
         system_prompt = (
             "당신은 노인 복지 센터의 비서입니다. 아래 문장을 간단히 다듬어 주세요. "
-            "주어진 프로그램 정보를 바탕으로, 친근하고 간결하며 자연스러운 문장으로 추천 메시지를 작성해 주세요. "
+            "주어진 프로그램 정보를 바탕으로, 친근하고 간결하며 자연스러운 문장으로 이모티콘 없이 추천 메시지를 작성해 주세요. "
             "예시 형식: '서예교실을 추천드릴께요. 창의적이고 감성적인 당신께 잘 어울릴꺼에요...' "
         )
         recommendation = gpt_call(system_prompt, raw_msg)
@@ -190,7 +190,7 @@ def get_chatbot_response(user_id: str, user_message: str, db: Session):
         if found_program_name:
             system_prompt = (
                 "당신은 노인 복지 센터 비서입니다. 친절히 안내해 주세요. "
-                "친근하고 간결하며 자연스러운 문장으로 추천 메시지를 작성해 주세요. "
+                "친근하고 간결하며 자연스러운 문장으로 추천 메시지를 이모티콘 없이 작성해 주세요. "
                 "예시 형식: '네, 마침 SK청솔노인복지관에서 서예교실을 진행합니다...' "
             )
             recommendation = gpt_call(system_prompt, raw_msg)
