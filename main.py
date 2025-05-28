@@ -25,6 +25,8 @@ origins = [
     "http://localhost:3002",
     "http://localhost:5173",
     "https://houseofchoi-fe.vercel.app",
+    "https://www.learningwith.co.kr",
+    "https://learningwith.co.kr"
 ]
 
 app.add_middleware(
