@@ -29,3 +29,11 @@ def get_all_schedules_by_id(db: Session, user_id: int) -> List[Schedule]:
         raise HTTPException(status_code=404, detail="등록된 스케줄이 없습니다.")
 
     return schedules
+
+def existing_schedule(db: Session, user_id: int, program_id: int):
+    existing = db.query(Schedule).filter_by(user_id=user_id, program_id=program_id).first()
+
+    if existing:
+        raise HTTPException(status_code=409, detail="이미 등록된 일정입니다.")
+
+    return existing

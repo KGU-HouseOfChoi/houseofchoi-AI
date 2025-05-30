@@ -9,7 +9,7 @@ from typing import List
 
 from crud.personality import get_latest_personality_by_user_id
 from crud.program import get_program_by_id, get_all_programs
-from crud.schedule import create_schedule
+from crud.schedule import create_schedule, existing_schedule
 from crud.user import get_user_by_id
 from model.program import Program
 from schemas.program_schema import ProgramSchema
@@ -63,6 +63,12 @@ def save_program(
     추천된 프로그램을 사용자의 일정으로 등록합니다.
     - 클라이언트는 Bearer 토큰과 program_id만 보내면 됨
     """
+
+    # 이미 등록된 경우 등록 안되게 처리
+    existing = existing_schedule(db,body.program_id, int(token_user_id))
+
+    if existing:
+        raise HTTPException(status_code=409, detail="이미 등록된 일정입니다")
 
     # 1) 사용자·프로그램 조회
     user = get_user_by_id(db, token_user_id)
