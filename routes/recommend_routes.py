@@ -65,7 +65,7 @@ def save_program(
     """
 
     # 이미 등록된 경우 등록 안되게 처리
-    existing = existing_schedule(db,body.program_id, int(token_user_id))
+    existing = existing_schedule(db, int(token_user_id), body.program_id)
 
     if existing:
         raise HTTPException(status_code=409, detail="이미 등록된 일정입니다")
