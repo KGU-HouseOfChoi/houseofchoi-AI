@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from crud.chat_log import get_last_recommended_program_by_user_id, create_chat_log, create_chat_log_with_program, \
     get_chat_log_by_id
 from crud.program import get_program_by_name
-from crud.schedule import create_schedule
+from crud.schedule import create_schedule, existing_schedule
 from crud.user import get_user_by_id
 from schemas.chatlog_schema import ChatLogResponse
 from utils.database import get_db
@@ -109,6 +109,10 @@ def get_chatbot_response(user_id: str, user_message: str, db: Session):
         print(recommended_program)
         program = get_program_by_name(db, recommended_program)
         user = get_user_by_id(db, int(user_id))
+
+        # 이미 등록돼 있으면 안됨됨
+        if existing_schedule(db, user.id, program.id):
+            raise HTTPException(status_code=409, detail="이미 등록된 일정입니다")
 
         # 3) schedule_route.py의 save_schedule 함수는 새 스키마에 맞춰 9개의 인자를 받으므로 호출
         schedule = create_schedule(
